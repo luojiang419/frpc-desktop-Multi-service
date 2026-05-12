@@ -17,9 +17,11 @@
 <h3 align="center">Frpc-Desktop</h3>
 
   <p align="center">
-    🎉 FRP跨平台桌面客户端，可视化配置，轻松实现内网穿透！
+    🎉 基于开源项目 <a href="https://github.com/luckjiawei/frpc-desktop">luckjiawei/frpc-desktop</a> 修改而来的桌面版本。
     <br />
-    支持所有frp版本 / 开机自启 / 可视化配置 / 免费开源
+    重点增强 Windows 场景下的能力：让一个 frpc 桌面客户端可以同时连接多个 frps 服务器进行反向代理。
+    <br />
+    支持所有frp版本 / 开机自启 / 可视化配置 / 同时连接多个frps服务器 / 免费开源
   </p>
 
   <p>🎊 <strong>下载量突破 10,000！感谢大家的支持！</strong></p>
@@ -52,6 +54,7 @@
 
 ## 里程碑
 
+- 2026-05-12: 发布v2.0.0版本 基于原开源项目修改，新增 Windows 下同时连接多个 frps 服务器能力
 - 2026-03-26: 发布v1.2.5版本 修复已知BUG
 - 2025-09-10: 发布v1.2.3版本 修复已知BUG，支持代理协议，优化性能
 - 2025-04-22: 发布v1.2.2版本 修复已知BUG，支持HTTP路径设置

@@ -17,9 +17,11 @@
 <h3 align="center">Frpc-Desktop</h3>
 
   <p align="center">
-    🎉 Cross-platform desktop client for FRP, visual configuration, easily achieve intranet penetration!
+    🎉 A secondary-development desktop build based on the open-source project <a href="https://github.com/luckjiawei/frpc-desktop">luckjiawei/frpc-desktop</a>.
     <br />
-    Support all frp versions / Auto-start / Visual configuration / Free and open source
+    Focused on one core enhancement for Windows: a single frpc desktop client can connect to multiple frps servers at the same time for reverse proxy scenarios.
+    <br />
+    Support all frp versions / Auto-start / Visual configuration / Multi-server FRPS connections / Free and open source
   </p>
 
   <p>🎊 <strong>10,000+ Downloads Milestone!</strong> Thank you for your support!</p>
@@ -57,6 +59,7 @@ Run command: `sudo xattr -cr Frpc-Desktop.app`
 
 ## Milestones
 
+- 2026-05-12: Released v2.0.0 Based on the original open-source project and added simultaneous connections to multiple frps servers on Windows
 - 2026-03-26: Released v1.2.5 Fixed known bugs
 - 2025-09-10: Released v1.2.3 Fixed known bugs, Supports proxy protocol, Optimize performance
 - 2025-04-22: Released v1.2.2 Fixed known bugs, Supports HTTP Locations
