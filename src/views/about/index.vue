@@ -1,5 +1,4 @@
 <script lang="ts" setup>
-import gitcodeIcon from "@/assets/GitCode.svg";
 import Breadcrumb from "@/layout/compoenets/Breadcrumb.vue";
 import { useFrpcDesktopStore } from "@/store/frpcDesktop";
 import { send } from "@/utils/ipcUtils";
@@ -30,27 +29,21 @@ const isLastVersion = computed(() => {
   return currVersion >= lastVersion;
 });
 
-/**
- * 打开github issues
- */
 const handleOpenGitHubIssues = () => {
   send(ipcRouters.SYSTEM.openUrl, {
-    url: "https://github.com/luckjiawei/frpc-desktop/issues"
+    url: "https://github.com/luojiang419/frpc-desktop-Multi-service/issues"
   });
 };
 
-/**
- * 打开github主页
- */
 const handleOpenGitHub = () => {
   send(ipcRouters.SYSTEM.openUrl, {
-    url: "https://github.com/luckjiawei/frpc-desktop"
+    url: "https://github.com/luojiang419/frpc-desktop-Multi-service"
   });
 };
 
-const handleOpenGitCode = () => {
+const handleOpenOriginalRepo = () => {
   send(ipcRouters.SYSTEM.openUrl, {
-    url: "https://gitcode.com/luckjiawei/frpc-desktop"
+    url: "https://github.com/luckjiawei/frpc-desktop"
   });
 };
 
@@ -110,7 +103,7 @@ defineComponent({
           class="w-[95px] h-[95px] mt-[-50px] animate__animated animate__flip"
           alt="Logo"
         />
-        <div class="mt-[8px] text-2xl">Frpc Desktop</div>
+        <div class="mt-[8px] text-2xl">Frpc Desktop Multi-Service</div>
         <div class="mt-[8px] text-neutral-400 flex items-center">
           <el-link
             :class="!isLastVersion ? 'line-through' : ''"
@@ -135,7 +128,7 @@ defineComponent({
           <p>
             {{ t("about.features.autoStart") }} /
             {{ t("about.features.visualConfig") }} /
-            {{ t("about.features.freeAndOpen") }}
+            {{ t("about.features.multiServer") }}
           </p>
         </div>
         <div class="mt-[12px]">
@@ -143,9 +136,9 @@ defineComponent({
             <Icon class="mr-2 cursor-pointer" icon="logos:github-icon" />
             {{ t("about.button.github") }}
           </el-button>
-          <el-button plain type="primary" @click="handleOpenGitCode">
-            <img :src="gitcodeIcon" class="mr-2 w-4 h-4" alt="GitCode" />
-            GitCode
+          <el-button plain type="primary" @click="handleOpenOriginalRepo">
+            <Icon class="mr-2 cursor-pointer" icon="mdi:source-repository" />
+            {{ t("about.button.originalRepo") }}
           </el-button>
         </div>
         <div class="mt-[12px]">

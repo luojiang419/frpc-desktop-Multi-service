@@ -91,7 +91,7 @@ class SystemController {
 
   getFrpcDesktopGithubLastRelease(req: ControllerParam) {
     this._gitHubService
-      .getGithubLastRelease("luckjiawei/frpc-desktop")
+      .getGithubLastRelease("luojiang419/frpc-desktop-Multi-service")
       .then((data: any) => {
         req.event.reply(
           req.channel,

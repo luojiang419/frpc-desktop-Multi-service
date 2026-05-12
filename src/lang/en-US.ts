@@ -1,7 +1,8 @@
 export default {
   app: {
-    title: "Frpc Desktop",
-    description: "开机自启 / 可视化配置 / 免费开源，提供便捷的使用体验。"
+    title: "Frpc Desktop Multi-Service",
+    description:
+      "Modified from an open-source project / Windows multi-server connectivity / visual configuration for flexible reverse proxy workflows."
   },
   router: {
     home: {
@@ -143,15 +144,17 @@ export default {
       doc: "Documentation",
       donate: "Donate",
       github: "Github",
-      issues: "Feedback"
+      issues: "Feedback",
+      originalRepo: "Original Repo"
     },
     features: {
       autoStart: "Auto Start",
       visualConfig: "Visual Configuration",
-      freeAndOpen: "Free and Open Source"
+      freeAndOpen: "Free and Open Source",
+      multiServer: "Multi-server Connections"
     },
     description:
-      "FRP cross-platform desktop client, visual configuration, easy to implement intranet penetration!",
+      "A Windows multi-service frpc desktop build based on the original open-source project, supporting simultaneous connections to multiple frps servers.",
     version: {
       latest: "Latest Version"
     }
@@ -390,7 +393,7 @@ export default {
         message: "Copy successfully",
         warning: {
           message:
-            "The content generated contains server keys and other information. Please keep it safe and the link is only available in Frpc-Desktop."
+            "The content generated contains server keys and other information. Please keep it safe and the link is only available in Frpc Desktop Multi-Service."
         }
       }
     }

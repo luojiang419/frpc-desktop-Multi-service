@@ -10,11 +10,11 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/luckjiawei/frpc-desktop">
+  <a href="https://github.com/luojiang419/frpc-desktop-Multi-service">
     <img src="public/logo/pack/1024x1024.png" alt="Logo" width="140">
   </a>
 
-<h3 align="center">Frpc-Desktop</h3>
+<h3 align="center">Frpc Desktop Multi-Service</h3>
 
   <p align="center">
     🎉 A secondary-development desktop build based on the open-source project <a href="https://github.com/luckjiawei/frpc-desktop">luckjiawei/frpc-desktop</a>.
@@ -118,8 +118,8 @@ No advertisements allowed!!!
 
 ## Contributors
 
-<a href="https://github.com/luckjiawei/frpc-desktop/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=luckjiawei/frpc-desktop" />
+<a href="https://github.com/luojiang419/frpc-desktop-Multi-service/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=luojiang419/frpc-desktop-Multi-service" />
 </a>
 
 ## License
@@ -128,26 +128,26 @@ No advertisements allowed!!!
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=luckjiawei/frpc-desktop&type=Date)](https://www.star-history.com/#luckjiawei/frpc-desktop&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=luojiang419/frpc-desktop-Multi-service&type=Date)](https://www.star-history.com/#luojiang419/frpc-desktop-Multi-service&Date)
 
 <!-- MARKDOWN LINKS & IMAGES -->
 
-[downloads-shield]: https://img.shields.io/github/downloads/luckjiawei/frpc-desktop/total.svg?style=for-the-badge
+[downloads-shield]: https://img.shields.io/github/downloads/luojiang419/frpc-desktop-Multi-service/total.svg?style=for-the-badge
 
-[downloads-url]: https://github.com/luckjiawei/frpc-desktop/releases
+[downloads-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/releases
 
-[forks-shield]: https://img.shields.io/github/forks/luckjiawei/frpc-desktop.svg?style=for-the-badge
+[forks-shield]: https://img.shields.io/github/forks/luojiang419/frpc-desktop-Multi-service.svg?style=for-the-badge
 
-[forks-url]: https://github.com/luckjiawei/frpc-desktop/network/members
+[forks-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/network/members
 
-[stars-shield]: https://img.shields.io/github/stars/luckjiawei/frpc-desktop.svg?style=for-the-badge
+[stars-shield]: https://img.shields.io/github/stars/luojiang419/frpc-desktop-Multi-service.svg?style=for-the-badge
 
-[stars-url]: https://github.com/luckjiawei/frpc-desktop/stargazers
+[stars-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/stargazers
 
-[issues-shield]: https://img.shields.io/github/issues/luckjiawei/frpc-desktop.svg?style=for-the-badge
+[issues-shield]: https://img.shields.io/github/issues/luojiang419/frpc-desktop-Multi-service.svg?style=for-the-badge
 
-[issues-url]: https://github.com/luckjiawei/frpc-desktop/issues
+[issues-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/issues
 
-[license-shield]: https://img.shields.io/github/license/luckjiawei/frpc-desktop.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/luojiang419/frpc-desktop-Multi-service.svg?style=for-the-badge
 
-[license-url]: https://github.com/luckjiawei/frpc-desktop/blob/master/LICENSE
+[license-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/blob/main/LICENSE

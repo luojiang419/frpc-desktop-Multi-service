@@ -1,7 +1,8 @@
 export default {
   app: {
-    title: "Frpc Desktop",
-    description: "开机自启 / 可视化配置 / 免费开源，提供便捷的使用体验。"
+    title: "Frpc Desktop Multi-Service",
+    description:
+      "基于开源项目修改 / Windows 多服务器连接 / 可视化配置，提供更灵活的反代体验。"
   },
   router: {
     home: {
@@ -138,14 +139,17 @@ export default {
       doc: "使用教程",
       donate: "捐赠名单",
       github: "GitHub",
-      issues: "反馈问题"
+      issues: "反馈问题",
+      originalRepo: "原开源项目"
     },
     features: {
       autoStart: "开机自启",
       visualConfig: "可视化配置",
-      freeAndOpen: "免费开源"
+      freeAndOpen: "免费开源",
+      multiServer: "多服务器连接"
     },
-    description: "FRP跨平台桌面客户端，可视化配置，轻松实现内网穿透！",
+    description:
+      "基于开源项目修改的 Windows 多服务器版 frpc 桌面客户端，可同时连接多个 frps 服务器进行反向代理。",
     version: {
       latest: "最新版本"
     },
@@ -227,7 +231,7 @@ export default {
       systemLaunchAtStartup: {
         label: "开机自启",
         requireMessage: "请选择是否开机自启",
-        tips: " 开启后开机时自动启动 Frpc-Desktop"
+        tips: " 开启后开机时自动启动 Frpc Desktop Multi-Service"
       },
       systemSilentStartup: {
         label: "静默启动",
@@ -387,7 +391,7 @@ export default {
         message: "复制成功",
         warning: {
           message:
-            "生成内容包含服务器密钥等内容 请妥善保管 且链接仅在Frpc-Desktop中可用"
+            "生成内容包含服务器密钥等内容 请妥善保管 且链接仅在 Frpc Desktop Multi-Service 中可用"
         }
       }
     }

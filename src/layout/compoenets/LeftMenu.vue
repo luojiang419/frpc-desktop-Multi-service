@@ -43,7 +43,7 @@ const guideSteps = ref({
   Version: {
     step: "6",
     intro:
-      "通过此功能，您可以查看当前安装的Frpc-Desktop版本，并检查是否有可用更新。"
+      "通过此功能，您可以查看当前安装的 Frpc Desktop Multi-Service 版本，并检查是否有可用更新。"
   }
 });
 const currentRoute = computed(() => {

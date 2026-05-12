@@ -136,8 +136,8 @@
   "publish": [
     {
       "provider": "github",
-      "owner": "luckjiawei",
-      "repo": "frpc-desktop",
+      "owner": "luojiang419",
+      "repo": "frpc-desktop-Multi-service",
       "releaseType": "draft",
     },
   ]
