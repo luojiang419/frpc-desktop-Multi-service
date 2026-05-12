@@ -35,12 +35,14 @@ export default {
       disconnected: "已断开",
       connectionError: "连接失败",
       runningTime: "已运行",
-      frpcStatus: "Frpc {status}"
+      frpcStatus: "Frpc {status}",
+      summary: "运行中 {running} / {total} 个服务器"
     },
     button: {
       start: "启 动",
       stop: "断 开",
-      viewLog: "查看日志"
+      viewLog: "查看日志",
+      viewServers: "查看服务器"
     },
     alert: {
       configRequired: {
@@ -57,6 +59,17 @@ export default {
         title: "提示",
         message: "Web界面端口已被占用，请前往设置页面更换 Web界面端口后再启动",
         confirm: "去设置"
+      }
+    },
+    dialog: {
+      serverStatus: {
+        title: "服务器连接状态",
+        running: "运行中",
+        error: "异常",
+        stopped: "未运行",
+        webPort: "Web端口",
+        pid: "进程ID",
+        message: "状态说明"
       }
     }
   },
@@ -111,6 +124,9 @@ export default {
     search: {
       placeholder: "搜索日志内容..."
     },
+    server: {
+      placeholder: "请选择服务器"
+    },
     loading: {
       text: "加载中..."
     },
@@ -138,7 +154,21 @@ export default {
     }
   },
   config: {
+    title: {
+      globalSettings: "全局设置",
+      versionSelection: "版本选择",
+      webInterface: "Web 界面",
+      transportConfiguration: "传输配置",
+      logConfiguration: "日志配置",
+      systemConfiguration: "系统配置",
+      serverConfiguration: "服务器配置",
+      serverProfiles: "服务器配置列表"
+    },
     form: {
+      profileName: {
+        label: "配置名称",
+        requireMessage: "请输入配置名称"
+      },
       frpcVerson: {
         label: "Frp版本",
         requireMessage: "请选择Frp版本"
@@ -278,19 +308,21 @@ export default {
         requireMessage: "请选择系统语言"
       }
     },
-    title: {
-      versionSelection: "版本选择",
-      webInterface: "Web 界面",
-      transportConfiguration: "传输配置",
-      logConfiguration: "日志配置",
-      systemConfiguration: "系统配置",
-      serverConfiguration: "服务器配置"
+    card: {
+      user: "用户",
+      auth: "鉴权",
+      authToken: "令牌",
+      authNone: "无",
+      multiuser: "多用户",
+      logLevel: "日志级别"
     },
     button: {
       manualRefresh: "手动刷新",
       goToDownload: "点击这里去下载",
       clear: "清除",
-      import: "导入"
+      import: "导入",
+      addProfile: "添加配置",
+      copyProfile: "复制分享链接"
     },
     alert: {
       resetConfig: {
@@ -323,12 +355,30 @@ export default {
     message: {
       invalidLink: "链接不正确 请输入正确的链接",
       openAppDataSuccess: "打开数据目录成功",
-      saveSuccess: "保存成功"
+      saveSuccess: "保存成功",
+      webPortManaged: "多个实例的 Web 管理端口会在启动时自动分配，无需手动填写。",
+      noProfiles: "暂无服务器配置，请先添加至少一个 FRPS 服务器。",
+      importProfileSuccess: "已导入服务器配置：{name}",
+      exportProfilesSuccess: "已导出 {count} 份服务器配置 TOML 文件。"
     },
     popover: {
       frpParameter: "Frp参数"
     },
     dialog: {
+      export: {
+        title: "导出完成"
+      },
+      profile: {
+        createTitle: "添加服务器配置",
+        editTitle: "编辑服务器配置",
+        basicTitle: "基础配置",
+        authTitle: "鉴权配置",
+        transportTitle: "传输配置",
+        tlsTitle: "TLS 配置",
+        logTitle: "日志配置",
+        deleteTitle: "删除确认",
+        deleteMessage: "确认删除服务器配置 {name} 吗？"
+      },
       importLink: {
         title: "导入链接"
       },
@@ -359,6 +409,7 @@ export default {
     operation: "操作",
     select: "选择",
     frpParameter: "frp参数",
+    createSuccess: "创建成功",
     deleteSuccess: "删除成功",
     modifySuccess: "修改成功"
   },

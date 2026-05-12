@@ -1,27 +1,27 @@
-import { BrowserWindow } from "electron";
 import fs from "fs";
-import BeanFactory from "../core/BeanFactory";
-import PathUtils from "../utils/PathUtils";
-import ResponseUtils from "../utils/ResponseUtils";
 import SystemService from "./SystemService";
+import ServerService from "./ServerService";
+import PathUtils from "../utils/PathUtils";
 
 class LogService {
   private readonly _systemService: SystemService;
-  private readonly _logPath: string = PathUtils.getFrpcLogFilePath();
+  private readonly _serverService: ServerService;
   private readonly _appPath: string = PathUtils.getAppLogFilePath();
 
-  constructor(systemService: SystemService) {
+  constructor(systemService: SystemService, serverService: ServerService) {
     this._systemService = systemService;
+    this._serverService = serverService;
   }
 
-  async getFrpLogContent() {
+  async getFrpLogContent(serverId: string) {
+    const logPath = PathUtils.getServerLogFilePath(serverId);
     return new Promise((resolve, reject) => {
-      if (!fs.existsSync(this._logPath)) {
+      if (!fs.existsSync(logPath)) {
         resolve("");
         return;
       }
       try {
-        const data = fs.readFileSync(this._logPath, "utf-8");
+        const data = fs.readFileSync(logPath, "utf-8");
         resolve(data);
       } catch (error) {
         reject(error);
@@ -44,46 +44,22 @@ class LogService {
     });
   }
 
-  private _watcher: fs.FSWatcher | null = null;
-
-  watchFrpcLog(listenerParam: ListenerParam) {
-    // 如果已存在watcher,先清理掉旧的
-    if (this._watcher) {
-      this._watcher.close();
-      this._watcher = null;
-    }
-
-    if (!fs.existsSync(this._logPath)) {
-      const timer = setTimeout(() => {
-        this.watchFrpcLog(listenerParam);
-        clearTimeout(timer);
-      }, 1000);
-      return;
-    }
-
-    this._watcher = fs.watch(this._logPath, (eventType, filename) => {
-      if (eventType === "change") {
-        const win: BrowserWindow = BeanFactory.getBean("win");
-        if (win && !win.isDestroyed()) {
-          win.webContents.send(
-            listenerParam.channel,
-            ResponseUtils.success(true)
-          );
-        }
-      }
-    });
+  async getServerLogOptions() {
+    const profiles = await this._serverService.getServerProfiles();
+    return profiles.map(profile => ({
+      _id: profile._id,
+      name: profile.name,
+      serverAddr: profile.serverAddr,
+      serverPort: profile.serverPort
+    }));
   }
 
-  openFrpcLogFile(): Promise<boolean> {
+  openFrpcLogFile(serverId: string): Promise<boolean> {
     return new Promise<boolean>((resolve, reject) => {
       this._systemService
-        .openLocalFile(this._logPath)
-        .then(result => {
-          resolve(result);
-        })
-        .catch(err => {
-          reject(err);
-        });
+        .openLocalFile(PathUtils.getServerLogFilePath(serverId))
+        .then(result => resolve(result))
+        .catch(err => reject(err));
     });
   }
 
@@ -91,12 +67,8 @@ class LogService {
     return new Promise<boolean>((resolve, reject) => {
       this._systemService
         .openLocalFile(this._appPath)
-        .then(result => {
-          resolve(result);
-        })
-        .catch(err => {
-          reject(err);
-        });
+        .then(result => resolve(result))
+        .catch(err => reject(err));
     });
   }
 }

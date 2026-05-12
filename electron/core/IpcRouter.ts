@@ -1,12 +1,24 @@
 export const ipcRouters: IpcRouters = {
   SERVER: {
-    saveConfig: {
-      path: "server/saveConfig",
-      controller: "configController.saveConfig"
+    saveGlobalSettings: {
+      path: "server/saveGlobalSettings",
+      controller: "configController.saveGlobalSettings"
     },
-    getServerConfig: {
-      path: "server/getServerConfig",
-      controller: "configController.getServerConfig"
+    getGlobalSettings: {
+      path: "server/getGlobalSettings",
+      controller: "configController.getGlobalSettings"
+    },
+    saveServerProfile: {
+      path: "server/saveServerProfile",
+      controller: "configController.saveServerProfile"
+    },
+    getServerProfiles: {
+      path: "server/getServerProfiles",
+      controller: "configController.getServerProfiles"
+    },
+    deleteServerProfile: {
+      path: "server/deleteServerProfile",
+      controller: "configController.deleteServerProfile"
     },
     resetAllConfig: {
       path: "server/resetAllConfig",
@@ -41,6 +53,10 @@ export const ipcRouters: IpcRouters = {
     openFrpcLogFile: {
       path: "log/openFrpcLogFile",
       controller: "logController.openFrpcLogFile"
+    },
+    getServerLogOptions: {
+      path: "log/getServerLogOptions",
+      controller: "logController.getServerLogOptions"
     },
     openAppLogFile: {
       path: "log/openAppLogFile",

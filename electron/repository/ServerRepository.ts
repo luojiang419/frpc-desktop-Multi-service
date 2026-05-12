@@ -1,7 +1,6 @@
 import BaseRepository from "./BaseRepository";
 
-// @Component()
-class ServerRepository extends BaseRepository<OpenSourceFrpcDesktopServer> {
+class ServerRepository extends BaseRepository<any> {
   constructor() {
     super("server");
   }
@@ -13,6 +12,18 @@ class ServerRepository extends BaseRepository<OpenSourceFrpcDesktopServer> {
           reject(err);
         } else {
           resolve(count > 0);
+        }
+      });
+    });
+  }
+
+  findLegacyConfig(): Promise<OpenSourceFrpcDesktopServer | null> {
+    return new Promise((resolve, reject) => {
+      this.db.findOne({ _id: "1" }, (err, document) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(document || null);
         }
       });
     });

@@ -15,20 +15,18 @@ import {
 } from "vue";
 import { useI18n } from "vue-i18n";
 import { ipcRouters } from "../../../electron/core/IpcRouter";
+
 defineComponent({
   name: "Home"
 });
 
 const frpcDesktopStore = useFrpcDesktopStore();
 const loading = ref(false);
+const launchDialogVisible = ref(false);
+const latestLaunchSummary = ref<FrpcLaunchSummary | null>(null);
 const { t } = useI18n();
 
-// Three-state status: "running" | "error" | "stopped"
-const frpcStatus = computed(() => {
-  if (!frpcDesktopStore.frpcProcessRunning) return "stopped";
-  if (frpcDesktopStore.frpcConnectionError) return "error";
-  return "running";
-});
+const frpcStatus = computed(() => frpcDesktopStore.frpcSummaryStatus);
 
 const handleStartFrpc = () => {
   send(ipcRouters.LAUNCH.launch);
@@ -48,11 +46,14 @@ const handleButtonClick = useDebounceFn(() => {
 }, 300);
 
 const uptime = computed(() => {
-  const uptime = frpcDesktopStore.frpcProcessUptime / 1000;
-  const days = Math.floor(uptime / (24 * 60 * 60));
-  const hours = Math.floor((uptime % (24 * 60 * 60)) / (60 * 60));
-  const minutes = Math.floor((uptime % (60 * 60)) / 60);
-  const seconds = Math.ceil(uptime % 60);
+  if (frpcDesktopStore.frpcProcessUptime < 0) {
+    return "";
+  }
+  const uptimeValue = frpcDesktopStore.frpcProcessUptime / 1000;
+  const days = Math.floor(uptimeValue / (24 * 60 * 60));
+  const hours = Math.floor((uptimeValue % (24 * 60 * 60)) / (60 * 60));
+  const minutes = Math.floor((uptimeValue % (60 * 60)) / 60);
+  const seconds = Math.ceil(uptimeValue % 60);
   let result = "";
   if (days > 0) {
     result += t("home.uptime.days", { days });
@@ -67,8 +68,39 @@ const uptime = computed(() => {
   return result;
 });
 
-// Reset loading whenever the running state changes (covers cases where the IPC
-// reply is delayed or never arrives, e.g. macOS sudo/osascript flow).
+const firstError = computed(() => {
+  return (
+    frpcDesktopStore.frpcLaunchResults.find(item => item.connectionError)
+      ?.connectionError ||
+    frpcDesktopStore.frpcLaunchResults.find(
+      item =>
+        item.lastStartTime > 0 && !item.running && !item.success && item.message
+    )?.message ||
+    null
+  );
+});
+
+const summaryText = computed(() => {
+  return t("home.status.summary", {
+    running: frpcDesktopStore.frpcRunningCount,
+    total: frpcDesktopStore.frpcTotalCount
+  });
+});
+
+const openLaunchSummary = () => {
+  if (latestLaunchSummary.value?.results?.length) {
+    launchDialogVisible.value = true;
+  }
+};
+
+const openServerLog = (serverId: string) => {
+  launchDialogVisible.value = false;
+  router.replace({
+    name: "Logger",
+    query: { serverId }
+  });
+};
+
 watch(
   () => frpcDesktopStore.frpcProcessRunning,
   () => {
@@ -79,12 +111,16 @@ watch(
 onMounted(() => {
   on(
     ipcRouters.LAUNCH.launch,
-    () => {
+    data => {
+      latestLaunchSummary.value = data;
+      frpcDesktopStore.hydrateProcessSummary(data);
+      if (data?.results?.length) {
+        launchDialogVisible.value = true;
+      }
       frpcDesktopStore.refreshRunning();
       loading.value = false;
     },
-    (bizCode: string, message: string) => {
-      console.log("bizCode", bizCode);
+    (bizCode: string) => {
       if (bizCode === "B1001") {
         ElMessageBox.alert(
           t("home.alert.configRequired.message"),
@@ -109,24 +145,14 @@ onMounted(() => {
             name: "Config"
           });
         });
-      } else if (bizCode === "B1006") {
-        ElMessageBox.alert(
-          t("home.alert.webServerPortInUse.message"),
-          t("home.alert.webServerPortInUse.title"),
-          {
-            confirmButtonText: t("home.alert.webServerPortInUse.confirm")
-          }
-        ).then(() => {
-          router.replace({
-            name: "Config"
-          });
-        });
       }
       loading.value = false;
     }
   );
 
-  on(ipcRouters.LAUNCH.terminate, () => {
+  on(ipcRouters.LAUNCH.terminate, data => {
+    latestLaunchSummary.value = data;
+    frpcDesktopStore.hydrateProcessSummary(data);
     frpcDesktopStore.refreshRunning();
     loading.value = false;
   });
@@ -174,84 +200,76 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="flex flex-col justify-center items-center">
-            <div class="flex flex-col gap-4 justify-between pl-10 w-96">
-              <transition name="fade">
-                <div
-                  class="flex gap-1 justify-center text-2xl font-bold text-center"
-                >
-                  <IconifyIconOffline
-                    v-if="frpcStatus === 'running'"
-                    class="text-[#7EC050] inline-block relative top-1"
-                    icon="check-circle-rounded"
-                  />
-                  <IconifyIconOffline
-                    v-else-if="frpcStatus === 'error'"
-                    class="text-[#E6A23C] inline-block relative top-1"
-                    icon="warningRounded"
-                  />
-                  <IconifyIconOffline
-                    v-else
-                    class="text-[#E47470] inline-block relative top-1"
-                    icon="error"
-                  />
-                  <span>
-                    {{
-                      $t("home.status.frpcStatus", {
-                        status:
-                          frpcStatus === "running"
-                            ? $t("home.status.running")
-                            : frpcStatus === "error"
-                              ? $t("home.status.connectionError")
-                              : $t("home.status.disconnected")
-                      })
-                    }}
-                  </span>
-                </div>
-              </transition>
+            <div class="flex flex-col gap-4 justify-between pl-10 w-[420px]">
+              <div class="flex gap-1 justify-center text-2xl font-bold text-center">
+                <IconifyIconOffline
+                  v-if="frpcStatus === 'running'"
+                  class="text-[#7EC050] inline-block relative top-1"
+                  icon="check-circle-rounded"
+                />
+                <IconifyIconOffline
+                  v-else-if="frpcStatus === 'error'"
+                  class="text-[#E6A23C] inline-block relative top-1"
+                  icon="warningRounded"
+                />
+                <IconifyIconOffline
+                  v-else
+                  class="text-[#E47470] inline-block relative top-1"
+                  icon="error"
+                />
+                <span>
+                  {{
+                    $t("home.status.frpcStatus", {
+                      status:
+                        frpcStatus === "running"
+                          ? $t("home.status.running")
+                          : frpcStatus === "error"
+                            ? $t("home.status.connectionError")
+                            : $t("home.status.disconnected")
+                    })
+                  }}
+                </span>
+              </div>
+
+              <div class="text-sm text-center text-slate-500">
+                {{ summaryText }}
+              </div>
+
               <div
-                v-if="frpcStatus === 'error'"
+                v-if="frpcStatus === 'error' && firstError"
                 class="justify-center w-full text-sm text-center animate__animated animate__fadeIn"
               >
-                <el-text
-                  class="break-all line-clamp-2 text-primary"
-                  :title="frpcDesktopStore.frpcConnectionError"
-                >
-                  {{ frpcDesktopStore.frpcConnectionError }}
+                <el-text class="break-all line-clamp-2 text-primary" :title="firstError">
+                  {{ firstError }}
                 </el-text>
-                <div class="mt-1">
-                  <el-link
-                    type="primary"
-                    @click="$router.replace({ name: 'Logger' })"
-                  >
+                <div class="flex gap-3 justify-center mt-2">
+                  <el-link type="primary" @click="openLaunchSummary">
+                    {{ $t("home.button.viewServers") }}
+                  </el-link>
+                  <el-link type="primary" @click="$router.replace({ name: 'Logger' })">
                     {{ $t("home.button.viewLog") }}
                   </el-link>
                 </div>
               </div>
+
               <div
-                v-else-if="frpcStatus === 'running'"
+                v-else-if="frpcDesktopStore.frpcProcessRunning"
                 class="justify-center w-full text-sm text-center animate__animated animate__fadeIn"
               >
-                <span class="el-text--success">{{
-                  $t("home.status.runningTime")
-                }}</span>
+                <span class="el-text--success">{{ $t("home.status.runningTime") }}</span>
                 <span class="ml-1 font-bold text-primary">{{ uptime }}</span>
-
-                <div class="justify-center w-full text-center">
-                  <el-link
-                    class="animate__animated animate__fadeIn"
-                    type="primary"
-                    @click="$router.replace({ name: 'Logger' })"
-                    >{{ $t("home.button.viewLog") }}</el-link
-                  >
+                <div class="flex gap-3 justify-center mt-2">
+                  <el-link type="primary" @click="openLaunchSummary">
+                    {{ $t("home.button.viewServers") }}
+                  </el-link>
+                  <el-link type="primary" @click="$router.replace({ name: 'Logger' })">
+                    {{ $t("home.button.viewLog") }}
+                  </el-link>
                 </div>
               </div>
 
-              <el-button
-                class="mt-4"
-                type="primary"
-                :disabled="loading"
-                @click="handleButtonClick"
-                >{{
+              <el-button class="mt-4" type="primary" :disabled="loading" @click="handleButtonClick">
+                {{
                   frpcDesktopStore.frpcProcessRunning
                     ? $t("home.button.stop")
                     : $t("home.button.start")
@@ -262,6 +280,53 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <el-dialog
+      v-model="launchDialogVisible"
+      :title="$t('home.dialog.serverStatus.title')"
+      width="720"
+    >
+      <div class="grid gap-4">
+        <div
+          v-for="item in latestLaunchSummary?.results || frpcDesktopStore.frpcLaunchResults"
+          :key="item.serverId"
+          class="p-4 border border-slate-200 rounded-xl"
+        >
+          <div class="flex justify-between items-start gap-3">
+            <div>
+              <div class="text-base font-semibold text-slate-900">{{ item.name }}</div>
+              <div class="text-sm text-slate-500">
+                {{ item.serverAddr }}:{{ item.serverPort }}
+              </div>
+            </div>
+            <el-tag :type="item.running && !item.connectionError ? 'success' : item.lastStartTime > 0 ? 'warning' : 'info'">
+              {{
+                item.running && !item.connectionError
+                  ? $t("home.dialog.serverStatus.running")
+                  : item.lastStartTime > 0
+                    ? $t("home.dialog.serverStatus.error")
+                    : $t("home.dialog.serverStatus.stopped")
+              }}
+            </el-tag>
+          </div>
+          <div class="grid grid-cols-1 gap-2 mt-3 text-sm text-slate-600 md:grid-cols-2">
+            <div>{{ $t("home.dialog.serverStatus.webPort") }}: {{ item.webServerPort || "-" }}</div>
+            <div>{{ $t("home.dialog.serverStatus.pid") }}: {{ item.pid || "-" }}</div>
+            <div class="md:col-span-2">
+              {{ $t("home.dialog.serverStatus.message") }}:
+              <span class="font-medium text-slate-900">
+                {{ item.connectionError || item.message || "-" }}
+              </span>
+            </div>
+          </div>
+          <div class="flex justify-end mt-3">
+            <el-button text type="primary" @click="openServerLog(item.serverId)">
+              {{ $t("home.button.viewLog") }}
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 

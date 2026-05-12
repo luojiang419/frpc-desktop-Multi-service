@@ -14,8 +14,8 @@ class LaunchController extends BaseController {
   launch(req: ControllerParam) {
     this._frpcProcessService
       .startFrpcProcess()
-      .then(r => {
-        req.event.reply(req.channel, ResponseUtils.success());
+      .then(data => {
+        req.event.reply(req.channel, ResponseUtils.success(data));
       })
       .catch((err: Error) => {
         Logger.error("LaunchController.launch", err);
@@ -26,8 +26,8 @@ class LaunchController extends BaseController {
   terminate(req: ControllerParam) {
     this._frpcProcessService
       .stopFrpcProcess()
-      .then(r => {
-        req.event.reply(req.channel, ResponseUtils.success());
+      .then(data => {
+        req.event.reply(req.channel, ResponseUtils.success(data));
       })
       .catch(err => {
         Logger.error("LaunchController.terminate", err);
@@ -36,18 +36,15 @@ class LaunchController extends BaseController {
   }
 
   getStatus(req: ControllerParam) {
-    const running = this._frpcProcessService.isRunning();
-    const connectionError = running
-      ? this._frpcProcessService.readFrpcConnectionError()
-      : null;
-    req.event.reply(
-      req.channel,
-      ResponseUtils.success({
-        running,
-        lastStartTime: this._frpcProcessService.frpcLastStartTime,
-        connectionError
+    this._frpcProcessService
+      .getStatusSummary()
+      .then(data => {
+        req.event.reply(req.channel, ResponseUtils.success(data));
       })
-    );
+      .catch((err: Error) => {
+        Logger.error("LaunchController.getStatus", err);
+        req.event.reply(req.channel, ResponseUtils.fail(err));
+      });
   }
 }
 

@@ -7,39 +7,67 @@ import pkg from "../../package.json";
 
 export const useFrpcDesktopStore = defineStore("frpcDesktop", {
   state: () => ({
-    running: false,
+    processStatus: "stopped" as FrpcLaunchStatus,
+    processResults: [] as FrpcLaunchResult[],
     uptime: -1,
-    versions: [],
+    versions: [] as FrpcVersion[],
     lastRelease: null,
-    language: null,
+    language: null as string | null,
     connectionError: null as string | null
   }),
   getters: {
-    frpcProcessRunning: state => state.running,
+    frpcProcessRunning: state =>
+      state.processResults.some(result => result.running),
     frpcProcessUptime: state => state.uptime,
     frpcConnectionError: state => state.connectionError,
+    frpcLaunchResults: state => state.processResults,
+    frpcSummaryStatus: state => state.processStatus,
+    frpcRunningCount: state =>
+      state.processResults.filter(result => result.running).length,
+    frpcTotalCount: state => state.processResults.length,
     downloadedVersions: state => state.versions,
     frpcDesktopLastRelease: state => state.lastRelease,
     frpcDesktopLanguage: state => state.language
   },
   actions: {
+    hydrateProcessSummary(summary: FrpcLaunchSummary) {
+      this.processStatus = summary.status;
+      this.processResults = summary.results || [];
+
+      const firstConnectionError = this.processResults.find(
+        result => !!result.connectionError
+      );
+      const firstLaunchError = this.processResults.find(
+        result =>
+          result.lastStartTime > 0 &&
+          !result.running &&
+          !result.success &&
+          result.message !== "Stopped"
+      );
+
+      this.connectionError =
+        firstConnectionError?.connectionError || firstLaunchError?.message || null;
+
+      const runningResults = this.processResults.filter(
+        result => result.running && result.lastStartTime > 0
+      );
+      if (runningResults.length > 0) {
+        const earliest = Math.min(
+          ...runningResults.map(result => result.lastStartTime)
+        );
+        this.uptime = new Date().getTime() - earliest;
+      } else {
+        this.uptime = -1;
+      }
+    },
+
     onListenerFrpcProcessRunning() {
       onListener(listeners.watchFrpcProcess, data => {
-        const { running, lastStartTime, connectionError } = data;
-        this.running = running;
-        this.connectionError = connectionError ?? null;
-        if (running) {
-          this.uptime = new Date().getTime() - lastStartTime;
-        }
+        this.hydrateProcessSummary(data);
       });
 
       on(ipcRouters.LAUNCH.getStatus, data => {
-        const { running, lastStartTime, connectionError } = data;
-        this.running = running;
-        this.connectionError = connectionError ?? null;
-        if (running) {
-          this.uptime = new Date().getTime() - lastStartTime;
-        }
+        this.hydrateProcessSummary(data);
       });
     },
 
@@ -48,28 +76,27 @@ export const useFrpcDesktopStore = defineStore("frpcDesktop", {
         this.versions = data;
       });
     },
+
     refreshRunning() {
       send(ipcRouters.LAUNCH.getStatus);
     },
+
     refreshDownloadedVersion() {
       send(ipcRouters.VERSION.getDownloadedVersions);
     },
+
     onListenerFrpcDesktopGithubLastRelease(sd?: false) {
       on(ipcRouters.SYSTEM.getFrpcDesktopGithubLastRelease, data => {
         const { manual, version } = data;
         this.lastRelease = version;
-        // tagName相对固定
         const tagName = this.lastRelease["tag_name"];
         let lastReleaseVersion = true;
         if (!tagName) {
-          // new
           lastReleaseVersion = false;
         }
-        // 最后版本号
         const lastVersion = tagName.replace("v", "").toString();
         const currVersion = pkg.version;
         lastReleaseVersion = currVersion >= lastVersion;
-        // return false;
         if (!lastReleaseVersion) {
           let content = this.lastRelease.body;
           content = content.replaceAll("\n", "<br/>");
@@ -87,27 +114,28 @@ export const useFrpcDesktopStore = defineStore("frpcDesktop", {
               url: this.lastRelease["html_url"]
             });
           });
-        } else {
-          if (manual) {
-            ElMessage({
-              message: "当前已是最新版本",
-              type: "success"
-            });
-          }
+        } else if (manual) {
+          ElMessage({
+            message: "当前已是最新版本",
+            type: "success"
+          });
         }
       });
     },
+
     checkNewVersion(manual: boolean) {
       send(ipcRouters.SYSTEM.getFrpcDesktopGithubLastRelease, {
         manual: manual
       });
     },
+
     onListenerFrpcDesktopLanguage() {
       on(ipcRouters.SERVER.getLanguage, data => {
         this.language = data;
         i18n.global.locale = data;
       });
     },
+
     getLanguage() {
       send(ipcRouters.SERVER.getLanguage);
     }

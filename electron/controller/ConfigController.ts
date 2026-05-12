@@ -1,6 +1,4 @@
-import { dialog } from "electron";
 import fs from "fs";
-import moment from "moment";
 import Logger from "../core/Logger";
 import FrpcProcessService from "../service/FrpcProcessService";
 import ServerService from "../service/ServerService";
@@ -25,26 +23,63 @@ class ConfigController extends BaseController {
     this._frpcProcessService = frpcProcessService;
   }
 
-  saveConfig(req: ControllerParam) {
+  saveGlobalSettings(req: ControllerParam) {
     this._serverService
-      .saveServerConfig(req.args)
-      .then(() => {
-        req.event.reply(req.channel, ResponseUtils.success());
-      })
-      .catch((err: Error) => {
-        Logger.error("ConfigController.saveConfig", err);
-        req.event.reply(req.channel, ResponseUtils.fail(err));
-      });
-  }
-
-  getServerConfig(req: ControllerParam) {
-    this._serverService
-      .getServerConfig()
+      .saveGlobalSettings(req.args)
       .then(data => {
         req.event.reply(req.channel, ResponseUtils.success(data));
       })
       .catch((err: Error) => {
-        Logger.error("ConfigController.getServerConfig", err);
+        Logger.error("ConfigController.saveGlobalSettings", err);
+        req.event.reply(req.channel, ResponseUtils.fail(err));
+      });
+  }
+
+  getGlobalSettings(req: ControllerParam) {
+    this._serverService
+      .getGlobalSettings()
+      .then(data => {
+        req.event.reply(req.channel, ResponseUtils.success(data));
+      })
+      .catch((err: Error) => {
+        Logger.error("ConfigController.getGlobalSettings", err);
+        req.event.reply(req.channel, ResponseUtils.fail(err));
+      });
+  }
+
+  saveServerProfile(req: ControllerParam) {
+    this._serverService
+      .saveServerProfile(req.args)
+      .then(data => {
+        req.event.reply(req.channel, ResponseUtils.success(data));
+      })
+      .catch((err: Error) => {
+        Logger.error("ConfigController.saveServerProfile", err);
+        req.event.reply(req.channel, ResponseUtils.fail(err));
+      });
+  }
+
+  getServerProfiles(req: ControllerParam) {
+    this._serverService
+      .getServerProfiles()
+      .then(data => {
+        req.event.reply(req.channel, ResponseUtils.success(data));
+      })
+      .catch((err: Error) => {
+        Logger.error("ConfigController.getServerProfiles", err);
+        req.event.reply(req.channel, ResponseUtils.fail(err));
+      });
+  }
+
+  deleteServerProfile(req: ControllerParam) {
+    this._frpcProcessService
+      .stopFrpcProcess(req.args)
+      .then(() => this._serverService.deleteServerProfile(req.args))
+      .then(() => {
+        req.event.reply(req.channel, ResponseUtils.success());
+      })
+      .catch((err: Error) => {
+        Logger.error("ConfigController.deleteServerProfile", err);
         req.event.reply(req.channel, ResponseUtils.fail(err));
       });
   }
@@ -62,9 +97,6 @@ class ConfigController extends BaseController {
   }
 
   resetAllConfig(req: ControllerParam) {
-    // await this._serverDao.truncate();
-    // await this._proxyDao.truncate();
-    // await this._versionDao.truncate();
     this._frpcProcessService
       .stopFrpcProcess()
       .then(() => {
@@ -72,18 +104,19 @@ class ConfigController extends BaseController {
           recursive: true,
           force: true
         });
-
         fs.rmSync(PathUtils.getDownloadStoragePath(), {
           recursive: true,
           force: true
         });
-
         fs.rmSync(PathUtils.getVersionStoragePath(), {
           recursive: true,
           force: true
         });
-
         fs.rmSync(PathUtils.getFrpcLogStoragePath(), {
+          recursive: true,
+          force: true
+        });
+        fs.rmSync(PathUtils.getServerConfigStoragePath(), {
           recursive: true,
           force: true
         });
@@ -96,33 +129,10 @@ class ConfigController extends BaseController {
   }
 
   exportConfig(req: ControllerParam) {
-    dialog
-      .showOpenDialog({
-        properties: ["openDirectory"]
-      })
-      .then(result => {
-        if (result.canceled) {
-          req.event.reply(
-            req.channel,
-            ResponseUtils.success({
-              canceled: true,
-              path: ""
-            })
-          );
-        } else {
-          const path = `${result.filePaths[0]}/frpc-${moment(new Date()).format(
-            "YYYYMMDDhhmmss"
-          )}.toml`;
-          this._serverService.genTomlConfig(path).then(() => {
-            req.event.reply(
-              req.channel,
-              ResponseUtils.success({
-                canceled: false,
-                path: path
-              })
-            );
-          });
-        }
+    this._serverService
+      .exportAllConfigs()
+      .then(data => {
+        req.event.reply(req.channel, ResponseUtils.success(data));
       })
       .catch((err: Error) => {
         Logger.error("ConfigController.exportConfig", err);
@@ -131,34 +141,6 @@ class ConfigController extends BaseController {
   }
 
   importTomlConfig(req: ControllerParam) {
-    // const win: BrowserWindow = BeanFactory.getBean("win");
-    // dialog
-    //   .showOpenDialog(win, {
-    //     properties: ["openFile"],
-    //     filters: [{ name: "Frpc Toml ConfigFile", extensions: ["toml"] }]
-    //   })
-    //   .then(result => {
-    //     if (result.canceled) {
-    //       req.event.reply(
-    //         req.channel,
-    //         ResponseUtils.success({
-    //           canceled: true,
-    //           path: ""
-    //         })
-    //       );
-    //     } else {
-    //       req.event.reply(
-    //         req.channel,
-    //         ResponseUtils.success({
-    //           canceled: false,
-    //           path: ""
-    //         })
-    //       );
-    //     }
-    //   });
-    // if (result.canceled) {
-    // } else {
-    // }
     this._serverService
       .importTomlConfig()
       .then(data => {
@@ -171,9 +153,15 @@ class ConfigController extends BaseController {
   }
 
   getLanguage(req: ControllerParam) {
-    this._serverService.getLanguage().then(data => {
-      req.event.reply(req.channel, ResponseUtils.success(data));
-    });
+    this._serverService
+      .getLanguage()
+      .then(data => {
+        req.event.reply(req.channel, ResponseUtils.success(data));
+      })
+      .catch((err: Error) => {
+        Logger.error("ConfigController.getLanguage", err);
+        req.event.reply(req.channel, ResponseUtils.fail(err));
+      });
   }
 
   saveLanguage(req: ControllerParam) {

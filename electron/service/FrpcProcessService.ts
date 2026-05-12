@@ -1,4 +1,4 @@
-import { exec, execSync, spawn } from "child_process";
+import { exec, execFile, spawn } from "child_process";
 import { app, BrowserWindow, Notification } from "electron";
 import fs from "fs";
 import path from "path";
@@ -14,30 +14,30 @@ import ResponseUtils from "../utils/ResponseUtils";
 import ServerService from "./ServerService";
 import SystemService from "./SystemService";
 
-// Fixed paths with no spaces so sudoers matching is unambiguous
 const MAC_LAUNCHER_PATH = "/usr/local/bin/frpc-desktop-launcher";
 const MAC_SUDOERS_FILE = "/etc/sudoers.d/frpc-desktop";
-
-// Error patterns that indicate frpc failed to connect to server
 const FRPC_ERROR_PATTERNS = [
   "connect to server error",
   "login to server failed"
 ];
-// Success patterns that indicate frpc connected successfully
 const FRPC_SUCCESS_PATTERNS = [
   "login to server success",
   "start proxy success",
   "proxy added success"
 ];
+const DEFAULT_WEB_SERVER_PORT = 57400;
+
+type ManagedFrpcProcessState = FrpcProcessState & {
+  process?: any;
+  notified: boolean;
+};
 
 class FrpcProcessService {
   private readonly _serverService: ServerService;
   private readonly _systemService: SystemService;
   private readonly _versionRepository: VersionRepository;
-  private _frpcProcess: any;
-  private _frpcProcessListener: any;
-  private _frpcLastStartTime: number = -1;
-  private _notification: number = -1;
+  private readonly _processStates = new Map<string, ManagedFrpcProcessState>();
+  private _frpcProcessListener: NodeJS.Timeout | null = null;
 
   constructor() {
     this._serverService = BeanFactory.getBean("serverService");
@@ -45,22 +45,11 @@ class FrpcProcessService {
     this._versionRepository = BeanFactory.getBean("versionRepository");
   }
 
-  /**
-   * Check whether the one-time macOS privileged helper is installed.
-   * The helper is a launcher script at a fixed path covered by a sudoers NOPASSWD rule,
-   * so subsequent frpc launches require no password prompt.
-   */
   private isMacHelperReady(): boolean {
     return fs.existsSync(MAC_LAUNCHER_PATH) && fs.existsSync(MAC_SUDOERS_FILE);
   }
 
-  /**
-   * Install the macOS privileged helper (one-time, shows a single password dialog).
-   * Writes a launcher script to /usr/local/bin and a sudoers NOPASSWD rule so that
-   * frpc can be started/stopped without further password prompts.
-   */
   private async installMacHelper(): Promise<void> {
-    // Launcher script: accepts "start <binary> <config>" or "stop <pid>"
     const launcherContent = [
       "#!/bin/bash",
       'ACTION="$1"',
@@ -84,10 +73,8 @@ class FrpcProcessService {
       { mode: 0o644 }
     );
 
-    // All paths (/tmp/..., /usr/local/bin/..., /etc/...) contain no spaces,
-    // so no quoting is needed inside the AppleScript string literal.
     const installCmd = [
-      `mkdir -p /usr/local/bin`,
+      "mkdir -p /usr/local/bin",
       `cp ${tempLauncher} ${MAC_LAUNCHER_PATH}`,
       `chmod 755 ${MAC_LAUNCHER_PATH}`,
       `chown root:wheel ${MAC_LAUNCHER_PATH}`,
@@ -96,76 +83,28 @@ class FrpcProcessService {
       `chown root:wheel ${MAC_SUDOERS_FILE}`
     ].join(" && ");
 
-    Logger.info(
-      "FrpcProcessService.installMacHelper",
-      "Installing privileged helper (one-time password prompt)"
-    );
-
     await new Promise<void>((resolve, reject) => {
       exec(
         `osascript -e 'do shell script "${installCmd}" with administrator privileges'`,
         err => {
-          if (err) reject(err);
-          else resolve();
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
         }
       );
     });
-
-    Logger.info(
-      "FrpcProcessService.installMacHelper",
-      `Privileged helper installed successfully: launcher=${MAC_LAUNCHER_PATH}`
-    );
   }
 
-  isRunning(): boolean {
-    if (!this._frpcProcess) {
-      // 尝试在 macOS/Linux 上探测外部已存在的 frpc 进程（应用重启后的残留进程）
-      try {
-        if (process.platform !== "win32") {
-          const processName = PathUtils.getFrpcFilename();
-          const stdout = execSync(`pgrep -x ${processName}`).toString().trim();
-          if (stdout) {
-            const pid = parseInt(stdout.split("\n")[0], 10);
-            if (!Number.isNaN(pid)) {
-              this._frpcProcess = { pid };
-              if (this._frpcLastStartTime === -1) {
-                this._frpcLastStartTime = Date.now();
-              }
-            }
-          }
-        } else {
-          const processName = PathUtils.getWinFrpFilename();
-          const stdout = execSync(
-            `tasklist /FI "IMAGENAME eq ${processName}" /FO CSV`
-          ).toString();
-          const lines = stdout.split("\n").filter(Boolean);
-
-          if (lines.length > 1) {
-            const info = lines[1]
-              .split('","')
-              .map(s => s.replace(/(^"|"$)/g, ""));
-            const pid = parseInt(info[1], 10);
-            if (!Number.isNaN(pid)) {
-              this._frpcProcess = { pid };
-              if (this._frpcLastStartTime === -1) {
-                this._frpcLastStartTime = Date.now();
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // 忽略未找到进程的错误
-      }
-
-      if (!this._frpcProcess) {
-        return false;
-      }
+  private isPidRunning(pid: number | null): boolean {
+    if (!pid) {
+      return false;
     }
     try {
-      process.kill(this._frpcProcess.pid, 0);
+      process.kill(pid, 0);
       return true;
     } catch (err: any) {
-      // EPERM means process exists but we lack permission (e.g. root-owned on macOS)
       if (err.code === "EPERM") {
         return true;
       }
@@ -173,37 +112,135 @@ class FrpcProcessService {
     }
   }
 
-  get frpcLastStartTime(): number {
-    return this._frpcLastStartTime;
+  isRunning(serverId?: string): boolean {
+    if (serverId) {
+      const state = this._processStates.get(serverId);
+      return state ? this.isPidRunning(state.pid) : false;
+    }
+    return Array.from(this._processStates.values()).some(state =>
+      this.isPidRunning(state.pid)
+    );
   }
 
-  /**
-   * Read the last portion of the frpc log file and detect connection errors.
-   * Scans backward through recent lines:
-   * - Returns the error message if the last relevant line is an error
-   * - Returns null if a success line appears after any errors (reconnected)
-   * - Returns null if no relevant lines found
-   */
-  readFrpcConnectionError(): string | null {
-    const logPath = PathUtils.getFrpcLogFilePath();
-    if (!fs.existsSync(logPath) || this._frpcLastStartTime === -1) {
+  private createState(
+    profile: FrpsServerProfile,
+    overrides?: Partial<ManagedFrpcProcessState>
+  ): ManagedFrpcProcessState {
+    return {
+      serverId: profile._id,
+      pid: null,
+      running: false,
+      success: false,
+      lastStartTime: -1,
+      connectionError: null,
+      webServerPort: null,
+      configPath: PathUtils.getServerTomlConfigFilePath(profile._id),
+      logPath: PathUtils.getServerLogFilePath(profile._id),
+      message: "Stopped",
+      notified: false,
+      ...overrides
+    };
+  }
+
+  private async getVersionOrThrow() {
+    const settings = await this._serverService.getGlobalSettings();
+    if (!settings.frpcVersion) {
+      throw new BusinessError(ResponseCode.NOT_FOUND_VERSION);
+    }
+    const version = await this._versionRepository.findByGithubReleaseId(
+      settings.frpcVersion
+    );
+    if (!version) {
+      throw new BusinessError(ResponseCode.NOT_FOUND_VERSION);
+    }
+
+    const frpcFilename =
+      process.platform === "win32"
+        ? PathUtils.getWinFrpFilename()
+        : PathUtils.getFrpcFilename();
+    const frpcBinaryPath = path.join(version.localPath, frpcFilename);
+    if (!fs.existsSync(frpcBinaryPath)) {
+      await this._versionRepository.deleteById(version._id);
+      throw new BusinessError(ResponseCode.NOT_FOUND_VERSION);
+    }
+
+    return version;
+  }
+
+  private getBinaryPath(version: FrpcVersion) {
+    return path.join(
+      version.localPath,
+      process.platform === "win32"
+        ? PathUtils.getWinFrpFilename()
+        : PathUtils.getFrpcFilename()
+    );
+  }
+
+  private getCommand(configPath: string) {
+    if (process.platform === "win32") {
+      return `${PathUtils.getWinFrpFilename()} -c "${configPath}"`;
+    }
+    return `./${PathUtils.getFrpcFilename()} -c "${configPath}"`;
+  }
+
+  private getReloadCommand(configPath: string) {
+    if (process.platform === "win32") {
+      return `${PathUtils.getWinFrpFilename()} reload -c "${configPath}"`;
+    }
+    return `./${PathUtils.getFrpcFilename()} reload -c "${configPath}"`;
+  }
+
+  private async verifyConfig(version: FrpcVersion, configPath: string) {
+    const binaryPath = this.getBinaryPath(version);
+    await new Promise<void>((resolve, reject) => {
+      execFile(binaryPath, ["verify", "-c", configPath], error => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  private async reserveWebServerPort(excludePorts: number[] = []) {
+    return await NetUtils.findAvailablePort(
+      DEFAULT_WEB_SERVER_PORT,
+      GlobalConstant.LOCAL_IP,
+      excludePorts
+    );
+  }
+
+  private async delay(ms: number) {
+    await new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private readLogError(logPath: string, lastStartTime: number): string | null {
+    if (!fs.existsSync(logPath) || lastStartTime === -1) {
       return null;
     }
     try {
       const stat = fs.statSync(logPath);
-      if (stat.size === 0) return null;
+      if (stat.size === 0) {
+        return null;
+      }
       const readSize = Math.min(stat.size, 8192);
       const buf = Buffer.alloc(readSize);
       const fd = fs.openSync(logPath, "r");
       fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
       fs.closeSync(fd);
-      const lines = buf.toString("utf-8").split("\n").filter(l => l.trim());
+      const lines = buf
+        .toString("utf-8")
+        .split("\n")
+        .filter(line => line.trim());
       for (let i = lines.length - 1; i >= 0; i--) {
         const line = lines[i];
-        if (FRPC_SUCCESS_PATTERNS.some(p => line.includes(p))) {
+        if (FRPC_SUCCESS_PATTERNS.some(pattern => line.includes(pattern))) {
           return null;
         }
-        const errorPattern = FRPC_ERROR_PATTERNS.find(p => line.includes(p));
+        const errorPattern = FRPC_ERROR_PATTERNS.find(pattern =>
+          line.includes(pattern)
+        );
         if (errorPattern) {
           const match = line.match(new RegExp(`${errorPattern}.*`));
           return match ? match[0].trim() : line.trim();
@@ -215,301 +252,402 @@ class FrpcProcessService {
     }
   }
 
-  async startFrpcProcess() {
-    if (this.isRunning()) {
-      Logger.info(
-        `FrpcProcessService.startFrpcProcess`,
-        `Already running, pid: ${this._frpcProcess.pid}`
-      );
-      return;
+  readFrpcConnectionError(serverId: string): string | null {
+    const state = this._processStates.get(serverId);
+    if (!state) {
+      return null;
     }
-    if (!(await this._serverService.hasServerConfig())) {
-      throw new BusinessError(ResponseCode.NOT_CONFIG);
-    }
-    const config = await this._serverService.getServerConfig();
-
-    const version = await this._versionRepository.findByGithubReleaseId(
-      config.frpcVersion
-    );
-    if (!version) {
-      throw new BusinessError(ResponseCode.NOT_FOUND_VERSION);
-    }
-
-    // Check binary actually exists (may have been deleted by antivirus)
-    const frpcFilename =
-      process.platform === "win32"
-        ? PathUtils.getWinFrpFilename()
-        : PathUtils.getFrpcFilename();
-    const frpcBinaryPath = path.join(version.localPath, frpcFilename);
-    if (!fs.existsSync(frpcBinaryPath)) {
-      Logger.warn(
-        `FrpcProcessService.startFrpcProcess`,
-        `Binary not found at ${frpcBinaryPath}, removing stale DB record`
-      );
-      await this._versionRepository.deleteById(version._id);
-      throw new BusinessError(ResponseCode.NOT_FOUND_VERSION);
-    }
-
-    Logger.info(
-      `FrpcProcessService.startFrpcProcess`,
-      `Starting frpc. version=${version.name}, platform=${process.platform}/${process.arch}, localPath=${version.localPath}`
-    );
-
-    if (config.webServer.port) {
-      const isPortInUse = await NetUtils.checkPortInUse(
-        config.webServer.port,
-        "127.0.0.1"
-      );
-      if (isPortInUse) {
-        Logger.warn(
-          `FrpcProcessService.startFrpcProcess`,
-          `Web Server Port ${config.webServer.port} is already in use`
-        );
-        throw new BusinessError(ResponseCode.WEB_SERVER_PORT_IN_USE);
-      }
-    }
-
-    const configPath = PathUtils.getTomlConfigFilePath();
-    await this._serverService.genTomlConfig(configPath);
-
-    Logger.debug(
-      `FrpcProcessService.startFrpcProcess`,
-      `Config generated at: ${configPath}`
-    );
-
-    if (process.platform === "darwin") {
-      // macOS: use the privileged helper (installed once) so no per-launch password prompt
-      if (!this.isMacHelperReady()) {
-        await this.installMacHelper();
-      }
-
-      // Pre-create the log file as the current user so frpc (running as root)
-      // appends to it without changing ownership, keeping it readable by this app.
-      const logFilePath = PathUtils.getFrpcLogFilePath();
-      if (!fs.existsSync(logFilePath)) {
-        fs.writeFileSync(logFilePath, "", { mode: 0o644 });
-      }
-
-      const frpcBinary = path.join(
-        version.localPath,
-        PathUtils.getFrpcFilename()
-      );
-
-      Logger.info(
-        `FrpcProcessService.startFrpcProcess`,
-        `macOS: launching via sudo -n ${MAC_LAUNCHER_PATH}, binary=${frpcBinary}`
-      );
-
-      // sudo -n is non-interactive; NOPASSWD sudoers rule allows this without a prompt
-      const pidStr = await new Promise<string>((resolve, reject) => {
-        exec(
-          `sudo -n "${MAC_LAUNCHER_PATH}" start "${frpcBinary}" "${configPath}"`,
-          (err, stdout) => {
-            if (err) reject(err);
-            else resolve(stdout.trim());
-          }
-        );
-      });
-
-      const pid = parseInt(pidStr, 10);
-      if (!isNaN(pid)) {
-        this._frpcProcess = { pid };
-        Logger.info(
-          `FrpcProcessService.startFrpcProcess`,
-          `frpc started successfully (macOS), pid=${pid}`
-        );
-      } else {
-        Logger.warn(
-          `FrpcProcessService.startFrpcProcess`,
-          `frpc started but pid is invalid: "${pidStr}"`
-        );
-      }
-      this._frpcLastStartTime = Date.now();
-      return;
-    }
-
-    let command = "";
-    if (process.platform === "win32") {
-      command = `${PathUtils.getWinFrpFilename()} -c "${configPath}"`;
-    } else {
-      command = `./${PathUtils.getFrpcFilename()} -c "${configPath}"`;
-    }
-
-    this._frpcProcess = spawn(command, {
-      cwd: version.localPath,
-      shell: true
-    });
-    this._frpcLastStartTime = Date.now();
-    Logger.info(
-      `FrpcProcessService.startFrpcProcess`,
-      `frpc started successfully, pid=${this._frpcProcess.pid}`
-    );
-
-    this._frpcProcess.stdout.on("data", data => {
-      Logger.debug(`FrpcProcessService.startFrpcProcess`, `stdout: ${data}`);
-    });
-
-    this._frpcProcess.stderr.on("data", data => {
-      Logger.debug(`FrpcProcessService.startFrpcProcess`, `stderr: ${data}`);
-    });
+    return this.readLogError(state.logPath, state.lastStartTime);
   }
 
-  async stopFrpcProcess() {
-    if (this._frpcProcess && this.isRunning()) {
-      const pid = this._frpcProcess.pid;
-      Logger.info(
-        `FrpcProcessService.stopFrpcProcess`,
-        `Stopping frpc, pid=${pid}`
-      );
+  private async syncState(profile: FrpsServerProfile) {
+    const existing = this._processStates.get(profile._id);
+    if (!existing) {
+      return;
+    }
+
+    const wasRunning = existing.running;
+    existing.running = this.isPidRunning(existing.pid);
+    existing.connectionError =
+      existing.running || existing.lastStartTime > -1
+        ? this.readLogError(existing.logPath, existing.lastStartTime)
+        : null;
+    existing.success = existing.running && !existing.connectionError;
+
+    if (existing.running) {
+      existing.message = existing.connectionError || "Running";
+      existing.notified = false;
+      return;
+    }
+
+    if (existing.lastStartTime === -1) {
+      existing.message = "Stopped";
+      return;
+    }
+
+    if (existing.connectionError) {
+      existing.message = existing.connectionError;
+      return;
+    }
+
+    if (wasRunning || existing.pid) {
+      existing.message = existing.message || "Process exited";
+    }
+  }
+
+  private toLaunchResult(
+    profile: FrpsServerProfile,
+    state?: ManagedFrpcProcessState
+  ): FrpcLaunchResult {
+    if (!state) {
+      return {
+        serverId: profile._id,
+        name: profile.name,
+        serverAddr: profile.serverAddr,
+        serverPort: profile.serverPort,
+        running: false,
+        success: false,
+        message: "Stopped",
+        connectionError: null,
+        webServerPort: null,
+        pid: null,
+        lastStartTime: -1
+      };
+    }
+    return {
+      serverId: profile._id,
+      name: profile.name,
+      serverAddr: profile.serverAddr,
+      serverPort: profile.serverPort,
+      running: state.running,
+      success: state.success,
+      message: state.message,
+      connectionError: state.connectionError,
+      webServerPort: state.webServerPort,
+      pid: state.pid,
+      lastStartTime: state.lastStartTime
+    };
+  }
+
+  private async startSingleProfile(
+    profile: FrpsServerProfile,
+    version: FrpcVersion,
+    reservedPorts: number[]
+  ) {
+    const existing = this._processStates.get(profile._id);
+    if (existing && this.isPidRunning(existing.pid)) {
+      await this.syncState(profile);
+      return this.toLaunchResult(profile, existing);
+    }
+
+    const configPath = PathUtils.getServerTomlConfigFilePath(profile._id);
+    const logPath = PathUtils.getServerLogFilePath(profile._id);
+    const webServerPort =
+      existing?.webServerPort ||
+      (await this.reserveWebServerPort([
+        ...reservedPorts,
+        ...Array.from(this._processStates.values())
+          .map(state => state.webServerPort)
+          .filter((port): port is number => typeof port === "number")
+      ]));
+
+    reservedPorts.push(webServerPort);
+    fs.writeFileSync(logPath, "", { flag: "w" });
+
+    const state = this.createState(profile, {
+      configPath,
+      logPath,
+      webServerPort,
+      lastStartTime: Date.now(),
+      message: "Starting"
+    });
+    this._processStates.set(profile._id, state);
+
+    try {
+      await this._serverService.genTomlConfig(profile, configPath, {
+        webServerPort,
+        logPath
+      });
+      await this.verifyConfig(version, configPath);
 
       if (process.platform === "darwin") {
-        // macOS: frpc runs as root; use the privileged helper to kill it
-        try {
-          await new Promise<void>((resolve, reject) => {
-            exec(`sudo -n "${MAC_LAUNCHER_PATH}" stop ${pid}`, err => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
-          Logger.info(
-            `FrpcProcessService.stopFrpcProcess`,
-            `frpc stopped successfully (macOS), pid=${pid}`
-          );
-        } catch (e) {
-          Logger.error(`FrpcProcessService.stopFrpcProcess`, e as Error);
+        if (!this.isMacHelperReady()) {
+          await this.installMacHelper();
         }
-        this._frpcProcess = null;
-        this._frpcLastStartTime = -1;
-        this._notification = -1;
-        return;
+        if (!fs.existsSync(logPath)) {
+          fs.writeFileSync(logPath, "", { mode: 0o644 });
+        }
+        const frpcBinary = path.join(
+          version.localPath,
+          PathUtils.getFrpcFilename()
+        );
+        const pidStr = await new Promise<string>((resolve, reject) => {
+          exec(
+            `sudo -n "${MAC_LAUNCHER_PATH}" start "${frpcBinary}" "${configPath}"`,
+            (err, stdout) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(stdout.trim());
+              }
+            }
+          );
+        });
+
+        state.pid = parseInt(pidStr, 10) || null;
+      } else {
+        const binaryPath = this.getBinaryPath(version);
+        state.process = spawn(binaryPath, ["-c", configPath], {
+          cwd: version.localPath,
+          shell: false
+        });
+        state.pid = state.process.pid ?? null;
+        state.process.stdout?.on("data", data => {
+          Logger.debug("FrpcProcessService.startSingleProfile", `${data}`);
+        });
+        state.process.stderr?.on("data", data => {
+          Logger.debug("FrpcProcessService.startSingleProfile", `${data}`);
+        });
+        state.process.on("exit", code => {
+          const currentState = this._processStates.get(profile._id);
+          if (!currentState) {
+            return;
+          }
+          currentState.running = false;
+          currentState.success = false;
+          currentState.connectionError = this.readLogError(
+            currentState.logPath,
+            currentState.lastStartTime
+          );
+          currentState.message =
+            currentState.connectionError ||
+            `frpc exited with code ${code ?? "unknown"}`;
+        });
       }
 
-      treeKill(pid, (error: Error) => {
-        if (error) {
-          Logger.error(`FrpcProcessService.stopFrpcProcess`, error);
-          throw error;
-        } else {
-          Logger.info(
-            `FrpcProcessService.stopFrpcProcess`,
-            `frpc stopped successfully, pid=${pid}`
-          );
-          this._frpcProcess = null;
-          this._frpcLastStartTime = -1;
-          this._notification = -1;
-        }
-      });
+      await this.delay(1500);
+      await this.syncState(profile);
+
+      if (!state.running) {
+        state.success = false;
+        state.message = state.connectionError || state.message || "Start failed";
+      }
+
+      return this.toLaunchResult(profile, state);
+    } catch (error: any) {
+      state.running = false;
+      state.success = false;
+      state.connectionError =
+        this.readLogError(state.logPath, state.lastStartTime) || null;
+      state.message =
+        state.connectionError || error?.message || "Start failed";
+      Logger.error(
+        "FrpcProcessService.startSingleProfile",
+        error instanceof Error ? error : new Error(state.message)
+      );
+      return this.toLaunchResult(profile, state);
     }
+  }
+
+  async startFrpcProcess(): Promise<FrpcLaunchSummary> {
+    const profiles = await this._serverService.getServerProfiles();
+    if (profiles.length < 1) {
+      throw new BusinessError(ResponseCode.NOT_CONFIG);
+    }
+
+    const version = await this.getVersionOrThrow();
+    const reservedPorts: number[] = [];
+    const results: FrpcLaunchResult[] = [];
+
+    for (const profile of profiles) {
+      results.push(
+        await this.startSingleProfile(profile, version, reservedPorts)
+      );
+    }
+
+    return await this.getStatusSummary(results);
+  }
+
+  private async stopSingleProcess(serverId: string) {
+    const state = this._processStates.get(serverId);
+    if (!state) {
+      return;
+    }
+    const pid = state.pid;
+
+    if (pid && this.isPidRunning(pid)) {
+      if (process.platform === "darwin") {
+        await new Promise<void>((resolve, reject) => {
+          exec(`sudo -n "${MAC_LAUNCHER_PATH}" stop ${pid}`, err => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        }).catch(error => {
+          Logger.error("FrpcProcessService.stopSingleProcess", error as Error);
+        });
+      } else {
+        await new Promise<void>(resolve => {
+          treeKill(pid, () => resolve());
+        });
+      }
+    }
+
+    this._processStates.delete(serverId);
+  }
+
+  async stopFrpcProcess(serverId?: string): Promise<FrpcLaunchSummary> {
+    if (serverId) {
+      await this.stopSingleProcess(serverId);
+    } else {
+      const ids = Array.from(this._processStates.keys());
+      for (const id of ids) {
+        await this.stopSingleProcess(id);
+      }
+    }
+    return await this.getStatusSummary();
   }
 
   async reloadFrpcProcess() {
     if (!this.isRunning()) {
       return;
     }
-    const config = await this._serverService.getServerConfig();
-    if (!config) {
-      throw new BusinessError(ResponseCode.NOT_CONFIG);
+
+    const settings = await this._serverService.getGlobalSettings();
+    if (!settings.frpcVersion) {
+      throw new BusinessError(ResponseCode.NOT_FOUND_VERSION);
     }
-    const version = await this._versionRepository.findByGithubReleaseId(
-      config.frpcVersion
-    );
-    const configPath = PathUtils.getTomlConfigFilePath();
-    await this._serverService.genTomlConfig(configPath);
-    let command = "";
-    if (process.platform === "win32") {
-      command = `${PathUtils.getWinFrpFilename()} reload -c "${configPath}"`;
-    } else {
-      command = `./${PathUtils.getFrpcFilename()} reload -c "${configPath}"`;
-    }
-    Logger.info(
-      `FrpcProcessService.reloadFrpcProcess`,
-      `Reloading frpc config, pid=${this._frpcProcess?.pid}`
-    );
-    exec(
-      command,
-      {
-        cwd: version.localPath
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          Logger.error(`FrpcProcessService.reloadFrpcProcess`, error);
-          return;
-        }
-        if (stderr) {
-          Logger.debug(
-            `FrpcProcessService.reloadFrpcProcess`,
-            `stderr: ${stderr}`
-          );
-        }
-        if (stdout) {
-          Logger.debug(
-            `FrpcProcessService.reloadFrpcProcess`,
-            `stdout: ${stdout}`
-          );
-        }
-        Logger.info(
-          `FrpcProcessService.reloadFrpcProcess`,
-          `frpc config reloaded successfully`
-        );
+    const version = await this.getVersionOrThrow();
+    const profiles = await this._serverService.getServerProfiles();
+
+    for (const profile of profiles) {
+      const state = this._processStates.get(profile._id);
+      if (!state || !state.running || !state.webServerPort) {
+        continue;
       }
-    );
+
+      await this._serverService.genTomlConfig(profile, state.configPath, {
+        webServerPort: state.webServerPort,
+        logPath: state.logPath
+      });
+
+      const command = this.getReloadCommand(state.configPath);
+      exec(
+        command,
+        {
+          cwd: version.localPath
+        },
+        error => {
+          if (error) {
+            Logger.error("FrpcProcessService.reloadFrpcProcess", error);
+          }
+        }
+      );
+    }
+  }
+
+  private async refreshStates(profiles: FrpsServerProfile[]) {
+    for (const profile of profiles) {
+      await this.syncState(profile);
+    }
+  }
+
+  private buildSummaryFromProfiles(
+    profiles: FrpsServerProfile[],
+    forcedResults?: FrpcLaunchResult[]
+  ): FrpcLaunchSummary {
+    const results =
+      forcedResults ||
+      profiles.map(profile =>
+        this.toLaunchResult(profile, this._processStates.get(profile._id))
+      );
+
+    const runningCount = results.filter(result => result.running).length;
+    const errorCount = results.filter(
+      result =>
+        !!result.connectionError ||
+        (result.lastStartTime > 0 && !result.running && !result.success)
+    ).length;
+
+    let status: FrpcLaunchStatus = "stopped";
+    if (results.length > 0) {
+      if (runningCount === results.length && errorCount === 0) {
+        status = "running";
+      } else if (runningCount > 0 || errorCount > 0) {
+        status = "error";
+      }
+    }
+
+    return {
+      status,
+      total: results.length,
+      runningCount,
+      errorCount,
+      results
+    };
+  }
+
+  async getStatusSummary(
+    forcedResults?: FrpcLaunchResult[]
+  ): Promise<FrpcLaunchSummary> {
+    const profiles = await this._serverService.getServerProfiles();
+    await this.refreshStates(profiles);
+    return this.buildSummaryFromProfiles(profiles, forcedResults);
   }
 
   async frpcProcessGuardian() {
     Logger.info(
-      `FrpcProcessService.frpcProcessGuardian`,
+      "FrpcProcessService.frpcProcessGuardian",
       `Guardian started, interval=${GlobalConstant.FRPC_PROCESS_STATUS_CHECK_INTERVAL}s`
     );
+
     setInterval(async () => {
-      const running = this.isRunning();
-      if (!running && this._frpcLastStartTime !== -1) {
-        const netStatus = await this._systemService.checkInternetConnect();
-        if (netStatus) {
-          this.startFrpcProcess().then(() => {
-            Logger.info(
-              `FrpcProcessService.frpcProcessGuardian`,
-              `Network restored, frpc process restarted.`
-            );
-          });
-        } else {
-          Logger.warn(
-            `FrpcProcessService.frpcProcessGuardian`,
-            `frpc is not running and network is unreachable, waiting for recovery.`
-          );
-        }
+      const summary = await this.getStatusSummary();
+      const hasStoppedStartedProcess = summary.results.some(
+        result => result.lastStartTime > 0 && !result.running
+      );
+      if (!hasStoppedStartedProcess) {
+        return;
+      }
+
+      const netStatus = await this._systemService.checkInternetConnect();
+      if (netStatus) {
+        await this.startFrpcProcess().catch(error => {
+          Logger.error("FrpcProcessService.frpcProcessGuardian", error);
+        });
       }
     }, GlobalConstant.FRPC_PROCESS_STATUS_CHECK_INTERVAL * 1000);
   }
 
   watchFrpcProcess(listenerParam: ListenerParam) {
-    this._frpcProcessListener = setInterval(() => {
-      const running = this.isRunning();
-      if (!running) {
+    if (this._frpcProcessListener) {
+      clearInterval(this._frpcProcessListener);
+    }
+
+    this._frpcProcessListener = setInterval(async () => {
+      const summary = await this.getStatusSummary();
+
+      summary.results.forEach(result => {
+        const state = this._processStates.get(result.serverId);
         if (
-          this._frpcLastStartTime !== -1 &&
-          this._notification !== this._frpcLastStartTime
+          state &&
+          result.lastStartTime > 0 &&
+          !result.running &&
+          !state.notified
         ) {
-          Logger.warn(
-            `FrpcProcessService.watchFrpcProcess`,
-            `frpc process exited unexpectedly (lastStartTime=${this._frpcLastStartTime})`
-          );
           new Notification({
             title: app.getName(),
-            body: "Connection lost, please check the logs for details."
+            body: `${result.name} connection lost, please check logs.`
           }).show();
-          this._notification = this._frpcLastStartTime;
+          state.notified = true;
         }
-      }
-      const connectionError = running ? this.readFrpcConnectionError() : null;
+      });
+
       const win: BrowserWindow = BeanFactory.getBean("win");
       if (win && !win.isDestroyed()) {
-        win.webContents.send(
-          listenerParam.channel,
-          ResponseUtils.success({
-            running: running,
-            lastStartTime: this._frpcLastStartTime,
-            connectionError
-          })
-        );
+        win.webContents.send(listenerParam.channel, ResponseUtils.success(summary));
       }
     }, GlobalConstant.FRPC_PROCESS_STATUS_CHECK_INTERVAL * 1000);
   }

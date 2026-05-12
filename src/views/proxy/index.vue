@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import IconifyIconOffline from "@/components/IconifyIcon/src/iconifyIconOffline";
 import Breadcrumb from "@/layout/compoenets/Breadcrumb.vue";
+import { useFrpcDesktopStore } from "@/store/frpcDesktop";
 import { on, removeRouterListeners, send } from "@/utils/ipcUtils";
 import { useClipboard, useDebounceFn } from "@vueuse/core";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
@@ -23,6 +24,7 @@ defineComponent({
 });
 
 const { t } = useI18n();
+const frpcDesktopStore = useFrpcDesktopStore();
 
 const proxys = ref<Array<FrpcProxy>>([]);
 const searchKeyword = ref("");
@@ -291,7 +293,21 @@ const isStcpVisitors = computed(() => {
   );
 });
 
-const frpcConfig = ref<FrpConfig>();
+const serverProfiles = ref<FrpsServerProfile[]>([]);
+const mappedServerProfiles = computed(() => {
+  const runningServerIds = new Set(
+    frpcDesktopStore.frpcLaunchResults
+      .filter(item => item.running)
+      .map(item => item.serverId)
+  );
+
+  const sourceProfiles =
+    runningServerIds.size > 0
+      ? serverProfiles.value.filter(profile => runningServerIds.has(profile._id))
+      : serverProfiles.value;
+
+  return sourceProfiles.filter(profile => !!profile.serverAddr);
+});
 
 const handleGetPortCount = (portString: string) => {
   let count = 0;
@@ -389,7 +405,7 @@ const handleLoadProxies = () => {
 };
 
 const handleLoadFrpcConfig = () => {
-  send(ipcRouters.SERVER.getServerConfig);
+  send(ipcRouters.SERVER.getServerProfiles);
 };
 
 const handleDeleteProxy = (proxy: FrpcProxy) => {
@@ -567,11 +583,10 @@ const handleSelectFile = (type: number, ext: string[]) => {
 onMounted(() => {
   handleLoadProxies();
   handleLoadFrpcConfig();
+  frpcDesktopStore.refreshRunning();
 
-  on(ipcRouters.SERVER.getServerConfig, data => {
-    if (data) {
-      frpcConfig.value = data;
-    }
+  on(ipcRouters.SERVER.getServerProfiles, data => {
+    serverProfiles.value = data || [];
   });
 
   on(ipcRouters.PROXY.getAllProxies, data => {
@@ -777,20 +792,28 @@ onUnmounted(() => {
                   </div>
 
                   <div
-                    v-if="proxy.type === 'tcp' || proxy.type === 'udp'"
-                    class="text-[12px] cursor-pointer"
+                    v-if="
+                      (proxy.type === 'tcp' || proxy.type === 'udp') &&
+                      mappedServerProfiles.length > 0
+                    "
+                    class="text-[12px]"
                   >
-                    <span>{{ t("proxy.mappingAddress") }}：</span>
-                    <span
-                      class="font-bold underline cursor-pointer text-primary"
-                      @click="
-                        handleCopyString(
-                          `${frpcConfig?.serverAddr}:${proxy.remotePort}`
-                        )
-                      "
+                    <div
+                      v-for="serverProfile in mappedServerProfiles"
+                      :key="`${proxy._id}-${serverProfile._id}`"
                     >
-                      {{ frpcConfig?.serverAddr }}:{{ proxy.remotePort }}
-                    </span>
+                      <span>{{ t("proxy.mappingAddress") }}：</span>
+                      <span
+                        class="font-bold underline cursor-pointer text-primary"
+                        @click="
+                          handleCopyString(
+                            `${serverProfile.serverAddr}:${proxy.remotePort}`
+                          )
+                        "
+                      >
+                        {{ serverProfile.serverAddr }}:{{ proxy.remotePort }}
+                      </span>
+                    </div>
                   </div>
                   <div
                     v-if="

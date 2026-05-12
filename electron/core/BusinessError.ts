@@ -6,7 +6,8 @@ enum ResponseCode {
   VERSION_ARGS_ERROR = "B1003;所选 frp 架构与操作系统不符",
   UNKNOWN_VERSION = "B1004;无法识别文件",
   NOT_FOUND_VERSION = "B1005;未找到版本",
-  WEB_SERVER_PORT_IN_USE = "B1006;WebServer Port In Use"
+  WEB_SERVER_PORT_IN_USE = "B1006;WebServer Port In Use",
+  NOT_FOUND_SERVER_PROFILE = "B1007;未找到服务器配置"
 }
 
 class BusinessError extends Error {

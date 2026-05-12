@@ -35,12 +35,14 @@ export default {
       disconnected: "Disconnected",
       connectionError: "Connection Failed",
       runningTime: "Running Time",
-      frpcStatus: "Frpc {status}"
+      frpcStatus: "Frpc {status}",
+      summary: "{running} / {total} servers running"
     },
     button: {
       start: "Start",
       stop: "Stop",
-      viewLog: "View Log"
+      viewLog: "View Log",
+      viewServers: "View Servers"
     },
     alert: {
       configRequired: {
@@ -60,6 +62,17 @@ export default {
         message:
           "The web server port is already in use, please go to the settings page and change the port",
         confirm: "Go to Settings"
+      }
+    },
+    dialog: {
+      serverStatus: {
+        title: "Server Status",
+        running: "Running",
+        error: "Error",
+        stopped: "Stopped",
+        webPort: "Web Port",
+        pid: "PID",
+        message: "Status"
       }
     }
   },
@@ -116,6 +129,9 @@ export default {
     search: {
       placeholder: "Search logs..."
     },
+    server: {
+      placeholder: "Select a server"
+    },
     loading: {
       text: "Loading..."
     },
@@ -141,7 +157,21 @@ export default {
     }
   },
   config: {
+    title: {
+      globalSettings: "Global Settings",
+      versionSelection: "Version Selection",
+      webInterface: "Web Server",
+      transportConfiguration: "Transport Configuration",
+      logConfiguration: "Log Configuration",
+      systemConfiguration: "System Configuration",
+      serverConfiguration: "Server Configuration",
+      serverProfiles: "Server Profiles"
+    },
     form: {
+      profileName: {
+        label: "Profile Name",
+        requireMessage: "Please enter profile name"
+      },
       frpcVerson: {
         label: "Frp Version",
         requireMessage: "Please select Frp version"
@@ -279,19 +309,21 @@ export default {
         requireMessage: "Please select system language"
       }
     },
-    title: {
-      versionSelection: "Version Selection",
-      webInterface: "Web Server",
-      transportConfiguration: "Transport Configuration",
-      logConfiguration: "Log Configuration",
-      systemConfiguration: "System Configuration",
-      serverConfiguration: "Server Configuration"
+    card: {
+      user: "User",
+      auth: "Auth",
+      authToken: "Token",
+      authNone: "None",
+      multiuser: "Multi-user",
+      logLevel: "Log Level"
     },
     button: {
       manualRefresh: "Manual Refresh",
       goToDownload: "Click here to download",
       clear: "Clear",
-      import: "Import"
+      import: "Import",
+      addProfile: "Add Profile",
+      copyProfile: "Copy Share Link"
     },
     alert: {
       resetConfig: {
@@ -325,12 +357,31 @@ export default {
     message: {
       invalidLink: "The link is incorrect, please enter the correct link",
       openAppDataSuccess: "Open data directory successfully",
-      saveSuccess: "Save successfully"
+      saveSuccess: "Save successfully",
+      webPortManaged:
+        "Web ports are allocated automatically for each running instance.",
+      noProfiles: "No server profile yet. Add at least one FRPS server first.",
+      importProfileSuccess: "Imported server profile: {name}",
+      exportProfilesSuccess: "Exported {count} TOML configuration files."
     },
     popover: {
       frpParameter: "Frp Parameter"
     },
     dialog: {
+      export: {
+        title: "Export Complete"
+      },
+      profile: {
+        createTitle: "Add Server Profile",
+        editTitle: "Edit Server Profile",
+        basicTitle: "Basic Settings",
+        authTitle: "Auth Settings",
+        transportTitle: "Transport Settings",
+        tlsTitle: "TLS Settings",
+        logTitle: "Log Settings",
+        deleteTitle: "Delete Profile",
+        deleteMessage: "Delete server profile {name}?"
+      },
       importLink: {
         title: "Import Link"
       },

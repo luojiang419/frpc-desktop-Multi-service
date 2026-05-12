@@ -20,6 +20,7 @@ import BeanFactory from "../core/BeanFactory";
 import { ipcRouters, listeners } from "../core/IpcRouter";
 import Logger from "../core/Logger";
 import ProxyRepository from "../repository/ProxyRepository";
+import ServerProfileRepository from "../repository/ServerProfileRepository";
 import ServerRepository from "../repository/ServerRepository";
 import VersionRepository from "../repository/VersionRepository";
 import FrpcProcessService from "../service/FrpcProcessService";
@@ -75,12 +76,26 @@ class FrpcDesktopApp {
     if (await serverService.isAutoConnectOnStartup()) {
       const frpcProcessService: FrpcProcessService =
         BeanFactory.getBean("frpcProcessService");
-      frpcProcessService.startFrpcProcess().then(() => {
-        Logger.info(
-          `FrpcDesktopApp.initializeWindow`,
-          `AutoConnectOnStartup Completed.`
-        );
-      });
+      frpcProcessService
+        .startFrpcProcess()
+        .then(summary => {
+          if (summary.runningCount > 0) {
+            Logger.info(
+              `FrpcDesktopApp.initializeWindow`,
+              `AutoConnectOnStartup Completed. running=${summary.runningCount}/${summary.total}`
+            );
+          } else {
+            Logger.warn(
+              `FrpcDesktopApp.initializeWindow`,
+              `AutoConnectOnStartup Failed. ${summary.results
+                .map(item => `${item.name}: ${item.message}`)
+                .join("; ")}`
+            );
+          }
+        })
+        .catch(error => {
+          Logger.error(`FrpcDesktopApp.initializeWindow`, error);
+        });
     }
 
     this._win = new BrowserWindow({
@@ -241,6 +256,7 @@ class FrpcDesktopApp {
 
   initializeBeans() {
     BeanFactory.setBean("serverRepository", new ServerRepository());
+    BeanFactory.setBean("serverProfileRepository", new ServerProfileRepository());
     BeanFactory.setBean("versionRepository", new VersionRepository());
     BeanFactory.setBean("proxyRepository", new ProxyRepository());
     BeanFactory.setBean("systemService", new SystemService());
@@ -248,6 +264,7 @@ class FrpcDesktopApp {
       "serverService",
       new ServerService(
         BeanFactory.getBean("serverRepository"),
+        BeanFactory.getBean("serverProfileRepository"),
         BeanFactory.getBean("proxyRepository")
       )
     );
@@ -262,7 +279,10 @@ class FrpcDesktopApp {
     );
     BeanFactory.setBean(
       "logService",
-      new LogService(BeanFactory.getBean("systemService"))
+      new LogService(
+        BeanFactory.getBean("systemService"),
+        BeanFactory.getBean("serverService")
+      )
     );
     BeanFactory.setBean("frpcProcessService", new FrpcProcessService());
     BeanFactory.setBean(

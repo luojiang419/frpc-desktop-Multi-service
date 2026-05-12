@@ -4,10 +4,8 @@ import Breadcrumb from "@/layout/compoenets/Breadcrumb.vue";
 import { useFrpcDesktopStore } from "@/store/frpcDesktop";
 import { on, removeRouterListeners, send } from "@/utils/ipcUtils";
 import { useDebounceFn } from "@vueuse/core";
-import confetti from "canvas-confetti/src/confetti.js";
 import { ElMessage, ElMessageBox, FormInstance, FormRules } from "element-plus";
 import { Base64 } from "js-base64";
-import _ from "lodash";
 import {
   defineComponent,
   onMounted,
@@ -23,29 +21,30 @@ defineComponent({
   name: "Config"
 });
 
-// type ShareLinkConfig = {
-//   serverAddr: string;
-//   serverPort: number;
-//   authMethod: string;
-//   authToken: string;
-//   transportHeartbeatInterval: number;
-//   transportHeartbeatTimeout: number;
-//   user: string;
-//   metaToken: string;
-// };
-
 const { t } = useI18n();
+const frpcDesktopStore = useFrpcDesktopStore();
 
-const defaultFormData: OpenSourceFrpcDesktopServer = {
-  _id: "",
-  multiuser: false,
+const createDefaultGlobalSettings = (): FrpcGlobalSettings => ({
+  _id: "global-settings",
   frpcVersion: null,
+  system: {
+    launchAtStartup: false,
+    silentStartup: false,
+    autoConnectOnStartup: false,
+    language: "en-US"
+  }
+});
+
+const createDefaultProfile = (): FrpsServerProfile => ({
+  _id: "",
+  name: "",
+  multiuser: false,
   loginFailExit: false,
   udpPacketSize: 1500,
   serverAddr: "",
   serverPort: 7000,
   auth: {
-    method: "",
+    method: "none",
     token: ""
   },
   log: {
@@ -77,28 +76,45 @@ const defaultFormData: OpenSourceFrpcDesktopServer = {
   metadatas: {
     token: ""
   },
-  webServer: {
-    addr: "127.0.0.1",
-    port: 57400,
-    user: "",
-    password: "",
-    pprofEnable: false
-  },
-  system: {
-    launchAtStartup: false,
-    silentStartup: false,
-    autoConnectOnStartup: false,
-    language: "en-US"
-  },
   user: ""
-};
-const formData = ref<OpenSourceFrpcDesktopServer>(defaultFormData);
+});
+
+const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+
+const globalSettings = ref<FrpcGlobalSettings>(createDefaultGlobalSettings());
+const serverProfiles = ref<FrpsServerProfile[]>([]);
 const loading = ref(1);
-const rules = reactive<FormRules>({
+const copyServerConfigBase64 = ref("");
+const pasteServerConfigBase64 = ref("");
+const protocol = ref("frp://");
+const currentSelectFileType = ref<"cert" | "key" | "ca" | "">( "");
+const globalFormRef = ref<FormInstance>();
+const profileFormRef = ref<FormInstance>();
+const profileDialog = reactive({
+  visible: false,
+  title: ""
+});
+const profileForm = ref<FrpsServerProfile>(createDefaultProfile());
+const visible = reactive({
+  copyServerConfig: false,
+  pasteServerConfig: false
+});
+
+const globalRules = reactive<FormRules>({
   frpcVersion: [
     {
       required: true,
       message: t("config.form.frpcVerson.requireMessage"),
+      trigger: "change"
+    }
+  ]
+});
+
+const profileRules = reactive<FormRules>({
+  name: [
+    {
+      required: true,
+      message: t("config.form.profileName.requireMessage"),
       trigger: "blur"
     }
   ],
@@ -107,406 +123,175 @@ const rules = reactive<FormRules>({
       required: true,
       message: t("config.form.serverAddr.requireMessage"),
       trigger: "blur"
-    },
-    {
-      pattern: /^[\w-]+(\.[\w-]+)+$/,
-      message: t("config.form.serverAddr.patternMessage"),
-      trigger: "blur"
     }
   ],
   serverPort: [
     {
       required: true,
       message: t("config.form.serverPort.requireMessage"),
-      trigger: "blur"
+      trigger: "change"
     }
   ],
-  user: [
+  "auth.token": [
     {
-      required: true,
-      message: t("config.form.user.requireMessage"),
-      trigger: "blur"
-    }
-  ],
-  multiuser: [
-    {
-      required: true,
-      message: t("config.form.multiuser.requireMessage"),
+      validator: (_rule, value, callback) => {
+        if (
+          profileForm.value.auth.method === "token" &&
+          (!value || !String(value).trim())
+        ) {
+          callback(new Error(t("config.form.authToken.requireMessage")));
+          return;
+        }
+        callback();
+      },
       trigger: "blur"
     }
   ],
   "metadatas.token": [
     {
-      required: true,
-      message: t("config.form.metadatasToken.requireMessage"),
+      validator: (_rule, value, callback) => {
+        if (profileForm.value.multiuser && (!value || !String(value).trim())) {
+          callback(new Error(t("config.form.metadatasToken.requireMessage")));
+          return;
+        }
+        callback();
+      },
       trigger: "blur"
     }
   ],
-  "auth.method": [
-    {
-      required: true,
-      message: t("config.form.authMethod.requireMessage"),
-      trigger: "blur"
-    }
-  ],
-  "auth.token": [
-    {
-      required: true,
-      message: t("config.form.authToken.requireMessage"),
-      trigger: "blur"
-    }
-  ],
-  "log.level": [
-    {
-      required: true,
-      message: t("config.form.logLevel.requireMessage"),
-      trigger: "blur"
-    }
-  ],
-  "log.maxDays": [
-    {
-      required: true,
-      message: t("config.form.logMaxDays.requireMessage"),
-      trigger: "blur"
-    }
-  ],
-  "tls.enable": [
-    {
-      required: true,
-      message: t("config.form.tlsEnable.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  // tlsConfigCertFile: [
-  //   { required: true, message: "请选择 TLS 证书文件", trigger: "change" }
-  // ],
-  // tlsConfigKeyFile: [
-  //   { required: true, message: "请选择 TLS 密钥文件", trigger: "change" }
-  // ],
-  // tlsConfigTrustedCaFile: [
-  //   { required: true, message: "请选择 CA 证书文件", trigger: "change" }
-  // ],
-  // tlsConfigServerName: [
-  //   { required: true, message: "请输入 TLS Server 名称", trigger: "blur" }
-  // ],
-  // proxyConfigEnable: [
-  //   { required: true, message: "请选择代理状态", trigger: "change" }
-  // ],
   "transport.proxyURL": [
     {
-      required: false,
-      message: t("config.form.proxyURL.requireMessage"),
-      trigger: "change"
-    },
-    {
-      pattern: /^https?\:\/\/(\w+:\w+@)?([a-zA-Z0-9.-]+)(:\d+)?$/,
-      message: t("config.form.proxyURL.patternMessage"),
+      validator: (_rule, value, callback) => {
+        if (!value) {
+          callback();
+          return;
+        }
+        const valid = /^https?:\/\/([^\s:@]+:[^\s:@]+@)?[^\s:@]+(:\d+)?$/.test(
+          String(value)
+        );
+        if (!valid) {
+          callback(new Error(t("config.form.transportProxyURL.patternMessage")));
+          return;
+        }
+        callback();
+      },
       trigger: "blur"
-    }
-  ],
-  "system.launchAtStartup": [
-    {
-      required: true,
-      message: t("config.form.systemLaunchAtStartup.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "system.silentStartup": [
-    {
-      required: true,
-      message: t("config.form.systemSilentStartup.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "system.autoConnectOnStartup": [
-    {
-      required: true,
-      message: t("config.form.systemAutoConnectOnStartup.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "transport.heartbeatInterval": [
-    {
-      required: true,
-      message: t("config.form.heartbeatInterval.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "transport.heartbeatTimeout": [
-    {
-      required: true,
-      message: t("config.form.heartbeatTimeout.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  // webEnable: [
-  //   { required: true, message: "web界面开关不能为空", trigger: "change" }
-  // ],
-  "webServer.port": [
-    {
-      required: true,
-      message: t("config.form.webPort.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "transport.protocol": [
-    {
-      required: true,
-      message: t("config.form.transportProtocol.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "transport.dialServerTimeout": [
-    {
-      required: true,
-      message: t("config.form.dialServerTimeout.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "transport.dialServerKeepalive": [
-    {
-      required: true,
-      message: t("config.form.dialServerKeepalive.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  transportPoolCount: [
-    {
-      required: true,
-      message: t("config.form.transportPoolCount.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "transport.tcpMux": [
-    {
-      required: true,
-      message: t("config.form.transportTcpMux.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "transport.tcpMuxKeepaliveInterval": [
-    {
-      required: true,
-      message: t("config.form.transportTcpMuxKeepaliveInterval.requireMessage"),
-      trigger: "change"
-    }
-  ],
-  "system.language": [
-    {
-      required: true,
-      message: t("config.form.systemLanguage.requireMessage"),
-      trigger: "change"
     }
   ]
 });
-const copyServerConfigBase64 = ref();
-const pasteServerConfigBase64 = ref();
-const formRef = ref<FormInstance>();
-const protocol = ref("frp://");
-const currSelectLocalFileType = ref();
-const frpcDesktopStore = useFrpcDesktopStore();
-
-watch(
-  () => frpcDesktopStore.downloadedVersions,
-  (newValue, oldValue) => {
-    checkAndResetVersion();
-  }
-);
-
-const visible = reactive({
-  copyServerConfig: false,
-  pasteServerConfig: false,
-  exportConfig: false
-});
-
-// const exportConfigType = ref("toml");
-
-const handleSubmit = useDebounceFn(() => {
-  if (!formRef.value) return;
-  formRef.value.validate(valid => {
-    if (valid) {
-      loading.value = 1;
-      const data = _.cloneDeep(formData.value);
-      send(ipcRouters.SERVER.saveConfig, data);
-    }
-  });
-}, 300);
-
-const handleMultiuserChange = e => {
-  if (e) {
-    ElMessageBox.alert(
-      t("config.alert.multiuserAlert.message"),
-      t("config.alert.multiuserAlert.title"),
-      {
-        // if you want to disable its autofocus
-        autofocus: false,
-        confirmButtonText: t("config.alert.multiuserAlert.confirm"),
-        dangerouslyUseHTMLString: true
-      }
-    );
-  }
-};
 
 const checkAndResetVersion = () => {
-  const currentVersion = formData.value.frpcVersion;
+  const currentVersion = globalSettings.value.frpcVersion;
   if (
     currentVersion &&
     !frpcDesktopStore.downloadedVersions.some(
       item => item.githubReleaseId === currentVersion
     )
   ) {
-    formData.value.frpcVersion = null;
+    globalSettings.value.frpcVersion = null;
   }
 };
 
-// const handleLoadDownloadedVersion = () => {
-//   send(ipcRouters.VERSION.getDownloadedVersions);
-// };
+watch(
+  () => frpcDesktopStore.downloadedVersions,
+  () => {
+    checkAndResetVersion();
+  }
+);
 
-const handleLoadSavedConfig = () => {
-  send(ipcRouters.SERVER.getServerConfig);
+const loadPageData = () => {
+  send(ipcRouters.SERVER.getGlobalSettings);
+  send(ipcRouters.SERVER.getServerProfiles);
 };
 
-onMounted(() => {
-  // handleLoadDownloadedVersion();
-  handleLoadSavedConfig();
-
-  on(ipcRouters.SERVER.getServerConfig, data => {
-    if (data) {
-      formData.value = data;
-      Object.keys(defaultFormData).forEach(key => {
-        if (!formData.value[key]) {
-          formData.value[key] = defaultFormData[key];
-        }
-      });
-      checkAndResetVersion();
+const handleSaveGlobalSettings = useDebounceFn(() => {
+  if (!globalFormRef.value) {
+    return;
+  }
+  globalFormRef.value.validate(valid => {
+    if (!valid) {
+      return;
     }
-    loading.value--;
-  });
-
-  // on(ipcRouters.VERSION.getDownloadedVersions, data => {
-  //   // versions.value = data;
-  //   checkAndResetVersion();
-  // });
-
-  on(ipcRouters.SERVER.saveConfig, data => {
-    ElMessage({
-      type: "success",
-      message: t("config.message.saveSuccess")
-    });
-    loading.value--;
-    frpcDesktopStore.getLanguage();
-  });
-
-  on(ipcRouters.SYSTEM.selectLocalFile, data => {
-    if (!data.canceled) {
-      switch (currSelectLocalFileType.value) {
-        case 1:
-          formData.value.transport.tls.certFile = data.path as string;
-          // tlsConfigCertFile = data;
-          break;
-        case 2:
-          formData.value.transport.tls.keyFile = data.path as string;
-          break;
-        case 3:
-          formData.value.transport.tls.trustedCaFile = data.path as string;
-          // formData.value.tlsConfigTrustedCaFile = data as string;
-          break;
-      }
-    }
-  });
-
-  on(ipcRouters.SERVER.resetAllConfig, () => {
-    ElMessageBox.alert(
-      t("config.alert.resetConfigSuccess.message"),
-      t("config.alert.resetConfigSuccess.title"),
-      {
-        closeOnClickModal: false,
-        showClose: false,
-        confirmButtonText: t("config.alert.resetConfigSuccess.confirm")
-      }
-    ).then(() => {
-      send(ipcRouters.SYSTEM.relaunchApp);
-    });
-  });
-
-  on(ipcRouters.SERVER.importTomlConfig, data => {
-    const { canceled, path } = data;
-    if (!canceled) {
-      // 礼花
-      confetti({
-        zIndex: 12002,
-        particleCount: 200,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-      ElMessageBox.alert(
-        t("config.alert.importTomlConfigSuccess.message"),
-        t("config.alert.importTomlConfigSuccess.title"),
-        {
-          closeOnClickModal: false,
-          showClose: false,
-          confirmButtonText: t("config.alert.importTomlConfigSuccess.confirm")
-        }
-      ).then(() => {
-        send(ipcRouters.SYSTEM.relaunchApp);
+    const payload = clone(globalSettings.value);
+    loading.value++;
+    try {
+      send(ipcRouters.SERVER.saveGlobalSettings, payload);
+    } catch (error) {
+      loading.value--;
+      ElMessage({
+        type: "error",
+        message: String(error)
       });
     }
   });
+}, 300);
 
-  on(ipcRouters.SERVER.exportConfig, data => {
-    const { canceled, path } = data;
-    if (!canceled) {
-      ElMessageBox.alert(
-        t("config.alert.exportConfigSuccess.message", { path }),
-        t("config.alert.exportConfigSuccess.title")
-      );
+const handleOpenCreateProfile = () => {
+  profileForm.value = createDefaultProfile();
+  profileDialog.title = t("config.dialog.profile.createTitle");
+  profileDialog.visible = true;
+};
+
+const handleOpenEditProfile = (profile: FrpsServerProfile) => {
+  profileForm.value = clone(profile);
+  profileDialog.title = t("config.dialog.profile.editTitle");
+  profileDialog.visible = true;
+};
+
+const handleSaveProfile = useDebounceFn(() => {
+  if (!profileFormRef.value) {
+    return;
+  }
+  profileFormRef.value.validate(valid => {
+    if (!valid) {
+      return;
+    }
+    const payload = clone(profileForm.value);
+    loading.value++;
+    try {
+      send(ipcRouters.SERVER.saveServerProfile, payload);
+    } catch (error) {
+      loading.value--;
+      ElMessage({
+        type: "error",
+        message: String(error)
+      });
     }
   });
-  // ElMessageBox.alert(data, `提示`);
-  on(ipcRouters.SYSTEM.openAppData, () => {
-    ElMessage({
-      type: "success",
-      message: t("config.message.openAppDataSuccess")
-    });
-  });
+}, 300);
 
-  on(ipcRouters.SERVER.saveLanguage, data => {
-    ElMessage({
-      type: "success",
-      message: t("config.message.saveSuccess")
-    });
-    loading.value--;
-    frpcDesktopStore.getLanguage();
-  });
-});
+const closeProfileDialog = () => {
+  profileDialog.visible = false;
+  profileFormRef.value?.clearValidate();
+};
 
-const handleSelectFile = (type: number, ext: string[]) => {
-  currSelectLocalFileType.value = type;
-  send(ipcRouters.SYSTEM.selectLocalFile, {
-    name: "",
-    extensions: ext
+const handleDeleteProfile = (profile: FrpsServerProfile) => {
+  ElMessageBox.confirm(
+    t("config.dialog.profile.deleteMessage", { name: profile.name }),
+    t("config.dialog.profile.deleteTitle"),
+    {
+      confirmButtonText: t("common.delete"),
+      cancelButtonText: t("common.close"),
+      type: "warning"
+    }
+  ).then(() => {
+    loading.value++;
+    send(ipcRouters.SERVER.deleteServerProfile, profile._id);
   });
 };
 
-/**
- * 分享配置
- */
-const handleCopyServerConfig2Base64 = useDebounceFn(() => {
-  const {
-    _id,
-    frpcVersion,
-    webServer,
-    system,
-    log,
-    udpPacketSize,
-    loginFailExit,
-    ...shareConfig
-  } = _.cloneDeep(formData.value);
+const buildSharePayload = (profile: FrpsServerProfile) => {
+  const shareConfig = clone(profile);
+  delete shareConfig._id;
   shareConfig.transport.tls.certFile = "";
   shareConfig.transport.tls.keyFile = "";
   shareConfig.transport.tls.trustedCaFile = "";
-  const base64str = Base64.encode(JSON.stringify(shareConfig));
+  shareConfig.log.to = "";
+  return shareConfig;
+};
+
+const handleCopyServerConfig2Base64 = useDebounceFn((profile: FrpsServerProfile) => {
+  const base64str = Base64.encode(JSON.stringify(buildSharePayload(profile)));
   copyServerConfigBase64.value = protocol.value + base64str;
   visible.copyServerConfig = true;
 }, 300);
@@ -522,13 +307,16 @@ const handlePasteServerConfigBase64 = useDebounceFn(() => {
       message: t("config.message.invalidLink")
     });
   };
+
   if (!pasteServerConfigBase64.value.startsWith(protocol.value)) {
     tips();
     return;
   }
-  const ciphertext = pasteServerConfigBase64.value.replace("frp://", "");
+
+  const ciphertext = pasteServerConfigBase64.value.replace(protocol.value, "");
   const plaintext = Base64.decode(ciphertext);
   let serverConfig = null;
+
   try {
     serverConfig = JSON.parse(plaintext);
   } catch {
@@ -536,41 +324,33 @@ const handlePasteServerConfigBase64 = useDebounceFn(() => {
     return;
   }
 
-  if (!serverConfig && !serverConfig.serverAddr) {
+  if (!serverConfig?.serverAddr || !serverConfig?.serverPort) {
     tips();
     return;
   }
-  if (!serverConfig && !serverConfig.serverPort) {
-    tips();
-    return;
-  }
-  formData.value.transport =
-    serverConfig.transport || defaultFormData.transport;
-  formData.value.auth = serverConfig.auth || defaultFormData.auth;
-  formData.value.serverAddr =
-    serverConfig.serverAddr || defaultFormData.serverAddr;
-  formData.value.serverPort =
-    serverConfig.serverPort || defaultFormData.serverPort;
-  formData.value.metadatas =
-    serverConfig.metadatas || defaultFormData.metadatas;
-  formData.value.user = serverConfig.user || defaultFormData.user;
-  handleSubmit();
+
+  const importedProfile = {
+    ...createDefaultProfile(),
+    ...serverConfig,
+    name:
+      serverConfig.name ||
+      `${serverConfig.serverAddr}:${serverConfig.serverPort}`
+  } as FrpsServerProfile;
+
+  loading.value++;
+  send(ipcRouters.SERVER.saveServerProfile, importedProfile);
   pasteServerConfigBase64.value = "";
   visible.pasteServerConfig = false;
 }, 300);
 
-const handleShowExportDialog = () => {
-  visible.exportConfig = true;
+const handleImportConfig = () => {
+  loading.value++;
+  send(ipcRouters.SERVER.importTomlConfig);
 };
 
 const handleExportConfig = useDebounceFn(() => {
   send(ipcRouters.SERVER.exportConfig);
-  // visibles.exportConfig = false;
 }, 300);
-
-const handleImportConfig = () => {
-  send(ipcRouters.SERVER.importTomlConfig);
-};
 
 const handleResetConfig = () => {
   ElMessageBox.alert(
@@ -590,21 +370,180 @@ const handleOpenDataFolder = useDebounceFn(() => {
   send(ipcRouters.SYSTEM.openAppData);
 }, 300);
 
-const handleSystemLanguageChange = e => {
-  send(ipcRouters.SERVER.saveLanguage, e);
+const handleSystemLanguageChange = (language: string) => {
+  globalSettings.value.system.language = language;
+  send(ipcRouters.SERVER.saveLanguage, language);
 };
 
+const handleSelectFile = (type: "cert" | "key" | "ca", ext: string[]) => {
+  currentSelectFileType.value = type;
+  send(ipcRouters.SYSTEM.selectLocalFile, {
+    name: "",
+    extensions: ext
+  });
+};
+
+onMounted(() => {
+  loadPageData();
+
+  on(
+    ipcRouters.SERVER.getGlobalSettings,
+    data => {
+      globalSettings.value = {
+        ...createDefaultGlobalSettings(),
+        ...data,
+        system: {
+          ...createDefaultGlobalSettings().system,
+          ...(data?.system || {})
+        }
+      };
+      checkAndResetVersion();
+      loading.value--;
+    },
+    () => {
+      loading.value = Math.max(0, loading.value - 1);
+    }
+  );
+
+  on(ipcRouters.SERVER.getServerProfiles, data => {
+    serverProfiles.value = data || [];
+  });
+
+  on(
+    ipcRouters.SERVER.saveGlobalSettings,
+    () => {
+      ElMessage({
+        type: "success",
+        message: t("config.message.saveSuccess")
+      });
+      loading.value--;
+      frpcDesktopStore.getLanguage();
+    },
+    () => {
+      loading.value = Math.max(0, loading.value - 1);
+    }
+  );
+
+  on(
+    ipcRouters.SERVER.saveServerProfile,
+    () => {
+      ElMessage({
+        type: "success",
+        message: profileForm.value._id
+          ? t("common.modifySuccess")
+          : t("common.createSuccess")
+      });
+      loading.value--;
+      closeProfileDialog();
+      send(ipcRouters.SERVER.getServerProfiles);
+    },
+    () => {
+      loading.value = Math.max(0, loading.value - 1);
+    }
+  );
+
+  on(
+    ipcRouters.SERVER.deleteServerProfile,
+    () => {
+      ElMessage({
+        type: "success",
+        message: t("common.deleteSuccess")
+      });
+      loading.value--;
+      send(ipcRouters.SERVER.getServerProfiles);
+    },
+    () => {
+      loading.value = Math.max(0, loading.value - 1);
+    }
+  );
+
+  on(ipcRouters.SYSTEM.selectLocalFile, data => {
+    if (!data.canceled) {
+      if (currentSelectFileType.value === "cert") {
+        profileForm.value.transport.tls.certFile = data.path as string;
+      } else if (currentSelectFileType.value === "key") {
+        profileForm.value.transport.tls.keyFile = data.path as string;
+      } else if (currentSelectFileType.value === "ca") {
+        profileForm.value.transport.tls.trustedCaFile = data.path as string;
+      }
+    }
+  });
+
+  on(ipcRouters.SERVER.resetAllConfig, () => {
+    ElMessageBox.alert(
+      t("config.alert.resetConfigSuccess.message"),
+      t("config.alert.resetConfigSuccess.title"),
+      {
+        closeOnClickModal: false,
+        showClose: false,
+        confirmButtonText: t("config.alert.resetConfigSuccess.confirm")
+      }
+    ).then(() => {
+      send(ipcRouters.SYSTEM.relaunchApp);
+    });
+  });
+
+  on(
+    ipcRouters.SERVER.importTomlConfig,
+    data => {
+      loading.value--;
+      if (!data?.canceled) {
+        ElMessage({
+          type: "success",
+          message: t("config.message.importProfileSuccess", {
+            name: data?.profile?.name || ""
+          })
+        });
+        send(ipcRouters.SERVER.getServerProfiles);
+      }
+    },
+    () => {
+      loading.value = Math.max(0, loading.value - 1);
+    }
+  );
+
+  on(ipcRouters.SERVER.exportConfig, data => {
+    if (!data.canceled) {
+      ElMessageBox.alert(
+        t("config.message.exportProfilesSuccess", {
+          count: data.paths.length
+        }),
+        t("config.dialog.export.title")
+      );
+    }
+  });
+
+  on(ipcRouters.SYSTEM.openAppData, () => {
+    ElMessage({
+      type: "success",
+      message: t("config.message.openAppDataSuccess")
+    });
+  });
+
+  on(ipcRouters.SERVER.saveLanguage, () => {
+    ElMessage({
+      type: "success",
+      message: t("config.message.saveSuccess")
+    });
+    frpcDesktopStore.getLanguage();
+  });
+});
+
 onUnmounted(() => {
-  removeRouterListeners(ipcRouters.SERVER.saveConfig);
-  removeRouterListeners(ipcRouters.SERVER.getServerConfig);
+  removeRouterListeners(ipcRouters.SERVER.getGlobalSettings);
+  removeRouterListeners(ipcRouters.SERVER.getServerProfiles);
+  removeRouterListeners(ipcRouters.SERVER.saveGlobalSettings);
+  removeRouterListeners(ipcRouters.SERVER.saveServerProfile);
+  removeRouterListeners(ipcRouters.SERVER.deleteServerProfile);
   removeRouterListeners(ipcRouters.SERVER.resetAllConfig);
   removeRouterListeners(ipcRouters.SERVER.importTomlConfig);
   removeRouterListeners(ipcRouters.SERVER.exportConfig);
+  removeRouterListeners(ipcRouters.SERVER.saveLanguage);
   removeRouterListeners(ipcRouters.SYSTEM.openAppData);
   removeRouterListeners(ipcRouters.SYSTEM.selectLocalFile);
-  removeRouterListeners(ipcRouters.SYSTEM.relaunchApp);
 });
 </script>
+
 <template>
   <div class="main">
     <breadcrumb>
@@ -620,1087 +559,181 @@ onUnmounted(() => {
       <el-button plain type="primary" @click="handleExportConfig">
         <IconifyIconOffline icon="file-save-rounded" />
       </el-button>
-      <el-button type="primary" @click="handleSubmit">
+      <el-button type="primary" @click="handleSaveGlobalSettings">
         <IconifyIconOffline icon="save-rounded" />
       </el-button>
     </breadcrumb>
+
     <div v-loading="loading > 0" class="pr-2 app-container-breadcrumb">
-      <div class="p-4 w-full bg-white rounded drop-shadow-lg">
-        <el-form
-          ref="formRef"
-          :model="formData"
-          :rules="rules"
-          label-position="right"
-          label-width="150"
-        >
-          <el-row :gutter="10">
-            <el-col :span="24">
-              <div class="flex justify-between h2">
-                <div>{{ t("config.title.versionSelection") }}</div>
-              </div>
-            </el-col>
-            <el-col :span="24">
-              <el-form-item
-                :label="t('config.form.frpcVerson.label')"
-                prop="frpcVersion"
-              >
-                <el-select
-                  v-model="formData.frpcVersion"
-                  class="w-full"
-                  clearable
-                >
-                  <el-option
-                    v-for="v in frpcDesktopStore.downloadedVersions"
-                    :key="v.githubReleaseId"
-                    :label="v.name"
-                    :value="v.githubReleaseId"
-                  />
-                </el-select>
-                <div class="flex justify-end w-full">
-                  <el-link
-                    type="primary"
-                    @click="frpcDesktopStore.refreshDownloadedVersion()"
-                  >
-                    <iconify-icon-offline class="mr-1" icon="refresh-rounded" />
-                    {{ t("config.button.manualRefresh") }}
-                  </el-link>
-                  <el-link
-                    class="ml-2"
-                    type="primary"
-                    @click="$router.replace({ name: 'Download' })"
-                  >
-                    <IconifyIconOffline class="mr-1" icon="download" />
-                    {{ t("config.button.goToDownload") }}
-                  </el-link>
-                </div>
-              </el-form-item>
-            </el-col>
-            <el-col :span="24">
-              <div class="flex justify-between h2">
-                <div>{{ t("config.title.serverConfiguration") }}</div>
-                <div class="flex justify-center items-center">
-                  <IconifyIconOffline
-                    class="mr-2 text-xl font-bold cursor-pointer"
-                    icon="content-copy"
-                    @click="handleCopyServerConfig2Base64"
-                  />
-                  <IconifyIconOffline
-                    class="mr-2 text-xl font-bold cursor-pointer"
-                    icon="content-paste-go"
-                    @click="handlePasteServerConfig4Base64"
-                  />
-                </div>
-              </div>
-            </el-col>
-            <el-col :span="24">
-              <el-form-item
-                :label="t('config.form.serverAddr.label')"
-                prop="serverAddr"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover placement="top" trigger="hover" width="300">
-                      <template #default>
-                        <div
-                          v-html="
-                            t('config.form.serverAddr.tips', {
-                              frpParameter: t('config.popover.frpParameter')
-                            })
-                          "
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.serverAddr.label") }}
-                </template>
-                <el-input
-                  v-model="formData.serverAddr"
-                  placeholder="127.0.0.1"
-                ></el-input>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.serverPort.label')"
-                prop="serverPort"
-              >
-                <el-input-number
-                  v-model="formData.serverPort"
-                  placeholder="7000"
-                  :min="0"
-                  :max="65535"
-                  controls-position="right"
-                  class="!w-full"
-                ></el-input-number>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.authMethod.label')"
-                prop="auth.method"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        {{ t("config.popover.frpParameter") }}:
-                        <span class="font-black text-[#5A3DAA]"
-                          >auth.method</span
-                        >
-                      </template>
-                      <template #reference>
-                        <!--                        <IconifyIconOffline class="text-base" color="#5A3DAA" icon="info"/>-->
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.authMethod.label") }}
-                </template>
-                <el-select
-                  v-model="formData.auth.method"
-                  :placeholder="t('config.form.authMethod.requireMessage')"
-                  clearable
-                >
-                  <el-option
-                    :label="t('config.form.authMethod.none')"
-                    value="none"
-                  ></el-option>
-                  <el-option
-                    :label="t('config.form.authMethod.token')"
-                    value="token"
-                  ></el-option>
-                  <!--                  <el-option label="多用户" value="multiuser"></el-option>-->
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col v-if="formData.auth.method === 'token'" :span="24">
-              <el-form-item
-                :label="t('config.form.authToken.label')"
-                prop="authToken"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover placement="top" trigger="hover" width="300">
-                      <template #default>
-                        {{ t("config.popover.frpParameter") }}:<span
-                          class="font-black text-[#5A3DAA]"
-                          >auth.token</span
-                        >
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.authToken.label") }}
-                </template>
-                <el-input
-                  v-model="formData.auth.token"
-                  placeholder="token"
-                  type="password"
-                  :show-password="true"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="24">
-              <el-form-item
-                :label="t('config.form.multiuser.label')"
-                prop="multiuser"
-              >
-                <!--
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover placement="top" trigger="hover">
-                      <template #default> 是否开启多用户模式 </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.multiuser.label") }}
-                </template>
-                -->
-                <el-switch
-                  v-model="formData.multiuser"
-                  :active-text="t('common.yes')"
-                  :inactive-text="t('common.no')"
-                  inline-prompt
-                  @change="handleMultiuserChange"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col v-if="formData.multiuser" :span="12">
-              <el-form-item :label="t('config.form.user.label')" prop="user">
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover placement="top" trigger="hover" width="300">
-                      <template #default>
-                        {{ t("config.popover.frpParameter") }}:<span
-                          class="font-black text-[#5A3DAA]"
-                          >user</span
-                        >
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.user.label") }}
-                </template>
-                <el-input
-                  v-model="formData.user"
-                  :placeholder="t('config.form.user.placeholder')"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col v-if="formData.multiuser" :span="12">
-              <el-form-item
-                :label="t('config.form.metadatasToken.label')"
-                prop="metadatas.token"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        {{ t("config.popover.frpParameter") }}:<span
-                          class="font-black text-[#5A3DAA]"
-                          >metadatas.token</span
-                        >
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.metadatasToken.label") }}
-                </template>
-                <el-input
-                  v-model="formData.metadatas.token"
-                  :placeholder="t('config.form.metadatasToken.placeholder')"
-                  type="password"
-                  :show-password="true"
-                />
-              </el-form-item>
-            </el-col>
-            <!-- <el-col :span="24">
-              <div class="h2">TLS Config</div>
-            </el-col> -->
+      <div class="grid gap-4">
+        <div class="p-4 w-full bg-white rounded drop-shadow-lg">
+          <div class="flex justify-between items-center mb-4">
+            <div class="h2">{{ t("config.title.globalSettings") }}</div>
+            <el-alert
+              :title="t('config.message.webPortManaged')"
+              type="info"
+              :closable="false"
+              class="max-w-[420px]"
+            />
+          </div>
 
-            <el-col :span="24">
-              <div class="h2">
-                {{ t("config.title.transportConfiguration") }}
-              </div>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.transportProtocol.label')"
-                prop="transport.protocol"
-                label-width="180"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="
-                            t('config.form.transportProtocol.tips', {
-                              frpParameter: t('config.popover.frpParameter')
-                            })
-                          "
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.transportProtocol.label") }}
-                </template>
-                <el-select v-model="formData.transport.protocol">
-                  <el-option label="tcp" value="tcp" />
-                  <el-option label="kcp" value="kcp" />
-                  <el-option label="quic" value="quic" />
-                  <el-option label="websocket" value="websocket" />
-                  <el-option label="wss" value="wss" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.transportPoolCount.label')"
-                prop="transport.poolCount"
-                label-width="180"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        {{ t("config.popover.frpParameter") }}:<span
-                          class="font-black text-[#5A3DAA]"
-                          >transport.poolCount</span
-                        >
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.transportPoolCount.label") }}
-                </template>
-                <el-input-number
-                  v-model="formData.transport.poolCount"
-                  class="w-full"
-                  controls-position="right"
-                ></el-input-number>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.transportHeartbeatInterval.label')"
-                prop="transport.heartbeatInterval"
-                label-width="180"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="
-                            t('config.form.transportHeartbeatInterval.tips', {
-                              frpParameter: t('config.popover.frpParameter')
-                            })
-                          "
-                        />
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.transportHeartbeatInterval.label") }}
-                </template>
-                <el-input-number
-                  v-model="formData.transport.heartbeatInterval"
-                  class="w-full"
-                  :min="1"
-                  :max="600"
-                  controls-position="right"
-                />
-                <!--                <el-input-->
-                <!--                    placeholder="请输入心跳间隔"-->
-                <!--                    type="number"-->
-                <!--                    :min="0"-->
-                <!--                    v-model="formData.heartbeatInterval"-->
-                <!--                >-->
-                <!--                  <template #append>秒</template>-->
-                <!--                </el-input>-->
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.transportHeartbeatTimeout.label')"
-                prop="transport.heartbeatTimeout"
-                label-width="180"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="
-                            t('config.form.transportHeartbeatTimeout.tips', {
-                              frpParameter: t('config.popover.frpParameter')
-                            })
-                          "
-                        />
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.transportHeartbeatTimeout.label") }}
-                </template>
-                <el-input-number
-                  v-model="formData.transport.heartbeatTimeout"
-                  class="w-full"
-                  :min="1"
-                  :max="600"
-                  controls-position="right"
-                />
-                <!--                <el-input-->
-                <!--                    placeholder="请输入心跳超时时间"-->
-                <!--                    :min="0"-->
-                <!--                    type="number"-->
-                <!--                    v-model="formData.heartbeatTimeout"-->
-                <!--                >-->
-                <!--                  <template #append>秒</template>-->
-                <!--                </el-input>-->
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.transportDialServerTimeout.label')"
-                prop="transport.dialServerTimeout"
-                label-width="180"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="
-                            t('config.form.transportDialServerTimeout.tips', {
-                              frpParameter: t('config.popover.frpParameter')
-                            })
-                          "
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.transportDialServerTimeout.label") }}
-                </template>
-                <el-input-number
-                  v-model="formData.transport.dialServerTimeout"
-                  class="w-full"
-                  controls-position="right"
-                ></el-input-number>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.transportDialServerKeepalive.label')"
-                prop="transport.dialServerKeepalive"
-                label-width="180"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="
-                            t('config.form.transportDialServerKeepalive.tips', {
-                              frpParameter: t('config.popover.frpParameter')
-                            })
-                          "
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.transportDialServerKeepalive.label") }}
-                </template>
-                <el-input-number
-                  v-model="formData.transport.dialServerKeepalive"
-                  class="w-full"
-                  controls-position="right"
-                ></el-input-number>
-              </el-form-item>
-            </el-col>
-
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.transportTcpMux.label')"
-                prop="transport.tcpMux"
-                label-width="180"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="
-                            t('config.form.transportTcpMux.tips', {
-                              frpParameter: t('config.popover.frpParameter')
-                            })
-                          "
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.transportTcpMux.label") }}
-                </template>
-                <el-switch
-                  v-model="formData.transport.tcpMux"
-                  :active-text="t('common.yes')"
-                  inline-prompt
-                  :inactive-text="t('common.no')"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col v-if="formData.transport.tcpMux" :span="12">
-              <el-form-item
-                :label="t('config.form.transportTcpMuxKeepaliveInterval.label')"
-                prop="transport.tcpMuxKeepaliveInterval"
-                label-width="180"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="
-                            t(
-                              'config.form.transportTcpMuxKeepaliveInterval.tips',
-                              {
-                                frpParameter: t('config.popover.frpParameter')
-                              }
-                            )
-                          "
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.transportTcpMuxKeepaliveInterval.label") }}
-                </template>
-                <el-input-number
-                  v-model="formData.transport.tcpMuxKeepaliveInterval"
-                  class="w-full"
-                  controls-position="right"
-                ></el-input-number>
-              </el-form-item>
-            </el-col>
-            <!--            <el-col :span="24">-->
-            <!--              <el-form-item label="启用代理：" prop="proxyConfigEnable">-->
-            <!--                <el-switch-->
-            <!--                  active-text="开"-->
-            <!--                  inline-prompt-->
-            <!--                  inactive-text="关"-->
-            <!--                  v-model="formData.proxyConfigEnable"-->
-            <!--                />-->
-            <!--              </el-form-item>-->
-            <!--            </el-col>-->
-            <!--            <template v-if="formData.proxyConfigEnable">-->
-            <el-col :span="24">
-              <el-form-item
-                :label="t('config.form.transportProxyURL.label')"
-                prop="transport.proxyURL"
-                label-width="180"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        {{ t("config.popover.frpParameter") }}:<span
-                          class="font-black text-[#5A3DAA]"
-                          >transport.proxyURL</span
-                        >
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.transportProxyURL.label") }}
-                </template>
-                <el-input
-                  v-model="formData.transport.proxyURL"
-                  placeholder="http://user:pwd@192.168.1.128:8080"
-                />
-              </el-form-item>
-            </el-col>
-            <!--            </template>-->
-            <el-col :span="24">
-              <el-form-item
-                :label="t('config.form.tlsEnable.label')"
-                prop="transport.tls.enable"
-                label-width="180"
-              >
-                <el-switch
-                  v-model="formData.transport.tls.enable"
-                  :active-text="t('common.yes')"
-                  :inactive-text="t('common.no')"
-                  inline-prompt
-                />
-              </el-form-item>
-            </el-col>
-            <template v-if="formData.transport.tls.enable">
+          <el-form
+            ref="globalFormRef"
+            :model="globalSettings"
+            :rules="globalRules"
+            label-position="right"
+            label-width="180"
+          >
+            <el-row :gutter="16">
               <el-col :span="24">
                 <el-form-item
-                  :label="t('config.form.tlsCertFile.label')"
-                  prop="tlsConfigCertFile"
-                  label-width="180"
+                  :label="t('config.form.frpcVerson.label')"
+                  prop="frpcVersion"
                 >
-                  <template #label>
-                    <div class="flex items-center mr-1 h-full">
-                      <el-popover width="300" placement="top" trigger="hover">
-                        <template #default>
-                          {{ t("config.popover.frpParameter") }}:<span
-                            class="font-black text-[#5A3DAA]"
-                            >transport.tls.certFile</span
-                          >
-                        </template>
-                        <template #reference>
-                          <IconifyIconOffline
-                            class="text-base"
-                            color="#5A3DAA"
-                            icon="info"
-                          />
-                        </template>
-                      </el-popover>
-                    </div>
-                    {{ t("config.form.tlsCertFile.label") }}
-                  </template>
-                  <el-input
-                    v-model="formData.transport.tls.certFile"
-                    class="button-input !cursor-pointer"
-                    :placeholder="t('config.form.tlsCertFile.placeholder')"
-                    readonly
+                  <el-select
+                    v-model="globalSettings.frpcVersion"
+                    class="w-full"
                     clearable
-                    @click="handleSelectFile(1, ['crt'])"
+                  >
+                    <el-option
+                      v-for="v in frpcDesktopStore.downloadedVersions"
+                      :key="v.githubReleaseId"
+                      :label="v.name"
+                      :value="v.githubReleaseId"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+
+              <el-col :span="8">
+                <el-form-item :label="t('config.form.systemLaunchAtStartup.label')">
+                  <el-switch
+                    v-model="globalSettings.system.launchAtStartup"
+                    :active-text="t('common.yes')"
+                    :inactive-text="t('common.no')"
+                    inline-prompt
                   />
-                  <!--                  <el-button-->
-                  <!--                    class="ml-2"-->
-                  <!--                    type="primary"-->
-                  <!--                    @click="handleSelectFile(1, ['crt'])"-->
-                  <!--                    >选择-->
-                  <!--                  </el-button>-->
-                  <el-button
-                    v-if="formData.transport.tls.certFile"
-                    class="ml-2"
-                    type="danger"
-                    @click="formData.transport.tls.certFile = ''"
-                    >{{ t("config.button.clear") }}
-                  </el-button>
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item :label="t('config.form.systemSilentStartup.label')">
+                  <el-switch
+                    v-model="globalSettings.system.silentStartup"
+                    :active-text="t('common.yes')"
+                    :inactive-text="t('common.no')"
+                    inline-prompt
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item :label="t('config.form.systemAutoConnectOnStartup.label')">
+                  <el-switch
+                    v-model="globalSettings.system.autoConnectOnStartup"
+                    :active-text="t('common.yes')"
+                    :inactive-text="t('common.no')"
+                    inline-prompt
+                  />
                 </el-form-item>
               </el-col>
               <el-col :span="24">
-                <el-form-item
-                  :label="t('config.form.tlsKeyFile.label')"
-                  prop="transport.tls.keyFile"
-                  label-width="180"
-                >
-                  <template #label>
-                    <div class="flex items-center mr-1 h-full">
-                      <el-popover width="300" placement="top" trigger="hover">
-                        <template #default>
-                          {{ t("config.popover.frpParameter") }}:<span
-                            class="font-black text-[#5A3DAA]"
-                            >transport.tls.keyFile</span
-                          >
-                        </template>
-                        <template #reference>
-                          <IconifyIconOffline
-                            class="text-base"
-                            color="#5A3DAA"
-                            icon="info"
-                          />
-                        </template>
-                      </el-popover>
-                    </div>
-                    {{ t("config.form.tlsKeyFile.label") }}
-                  </template>
-                  <el-input
-                    v-model="formData.transport.tls.keyFile"
-                    class="button-input"
-                    :placeholder="t('config.form.tlsKeyFile.placeholder')"
-                    readonly
-                    @click="handleSelectFile(2, ['key'])"
-                  />
-                  <!--                  <el-button-->
-                  <!--                    class="ml-2"-->
-                  <!--                    type="primary"-->
-                  <!--                    @click="handleSelectFile(2, ['key'])"-->
-                  <!--                    >选择-->
-                  <!--                  </el-button>-->
-                  <el-button
-                    v-if="formData.transport.tls.keyFile"
-                    class="ml-2"
-                    type="danger"
-                    @click="formData.transport.tls.keyFile = ''"
-                    >{{ t("config.button.clear") }}
-                  </el-button>
+                <el-form-item :label="t('config.form.systemLanguage.label')">
+                  <el-select
+                    v-model="globalSettings.system.language"
+                    @change="handleSystemLanguageChange"
+                  >
+                    <el-option label="中文" value="zh-CN" />
+                    <el-option label="English" value="en-US" />
+                  </el-select>
                 </el-form-item>
               </el-col>
-              <el-col :span="24">
-                <el-form-item
-                  :label="t('config.form.caCertFile.label')"
-                  prop="transport.tls.trustedCaFile"
-                  label-width="180"
-                >
-                  <template #label>
-                    <div class="flex items-center mr-1 h-full">
-                      <el-popover width="300" placement="top" trigger="hover">
-                        <template #default>
-                          {{ t("config.popover.frpParameter") }}:<span
-                            class="font-black text-[#5A3DAA]"
-                            >transport.tls.trustedCaFile</span
-                          >
-                        </template>
-                        <template #reference>
-                          <IconifyIconOffline
-                            class="text-base"
-                            color="#5A3DAA"
-                            icon="info"
-                          />
-                        </template>
-                      </el-popover>
-                    </div>
-                    {{ t("config.form.caCertFile.label") }}
-                  </template>
-                  <el-input
-                    v-model="formData.transport.tls.trustedCaFile"
-                    class="button-input"
-                    :placeholder="t('config.form.caCertFile.placeholder')"
-                    readonly
-                    @click="handleSelectFile(3, ['crt'])"
-                  />
-                  <!--                  <el-button-->
-                  <!--                    class="ml-2"-->
-                  <!--                    type="primary"-->
-                  <!--                    @click="handleSelectFile(3, ['crt'])"-->
-                  <!--                    >选择-->
-                  <!--                  </el-button>-->
-                  <el-button
-                    v-if="formData.transport.tls.trustedCaFile"
-                    class="ml-2"
-                    type="danger"
-                    @click="formData.transport.tls.trustedCaFile = ''"
-                    >{{ t("config.button.clear") }}
-                  </el-button>
-                </el-form-item>
-              </el-col>
-              <el-col :span="24">
-                <el-form-item
-                  :label="t('config.form.tlsServerName.label')"
-                  prop="tlsConfigServerName"
-                  label-width="180"
-                >
-                  <template #label>
-                    <div class="flex items-center mr-1 h-full">
-                      <el-popover width="300" placement="top" trigger="hover">
-                        <template #default>
-                          {{ t("config.popover.frpParameter") }}:<span
-                            class="font-black text-[#5A3DAA]"
-                            >transport.tls.serverName</span
-                          >
-                        </template>
-                        <template #reference>
-                          <IconifyIconOffline
-                            class="text-base"
-                            color="#5A3DAA"
-                            icon="info"
-                          />
-                        </template>
-                      </el-popover>
-                    </div>
-                    {{ t("config.form.tlsServerName.label") }}
-                  </template>
-                  <el-input
-                    v-model="formData.transport.tls.serverName"
-                    :placeholder="t('config.form.tlsServerName.placeholder')"
-                    clearable
-                  />
-                </el-form-item>
-              </el-col>
-            </template>
+            </el-row>
+          </el-form>
+        </div>
 
-            <el-col :span="24">
-              <div class="h2">{{ t("config.title.webInterface") }}</div>
-            </el-col>
+        <div class="p-4 w-full bg-white rounded drop-shadow-lg">
+          <div class="flex justify-between items-center mb-4">
+            <div class="h2">{{ t("config.title.serverProfiles") }}</div>
+            <div class="flex gap-2 items-center">
+              <IconifyIconOffline
+                class="text-xl font-bold cursor-pointer text-primary"
+                icon="content-paste-go"
+                @click="handlePasteServerConfig4Base64"
+              />
+              <el-button type="primary" @click="handleOpenCreateProfile">
+                <IconifyIconOffline class="mr-1" icon="add-rounded" />
+                {{ t("config.button.addProfile") }}
+              </el-button>
+            </div>
+          </div>
 
-            <!--            <el-col :span="12">-->
-            <!--              <el-form-item label="启用Web界面：" prop="webEnable">-->
-            <!--                <template #label>-->
-            <!--                  <div class="flex items-center mr-1 h-full">-->
-            <!--                    <el-popover width="300" placement="top" trigger="hover">-->
-            <!--                      <template #reference>-->
-            <!--                        <IconifyIconOffline-->
-            <!--                          class="text-base"-->
-            <!--                          color="#5A3DAA"-->
-            <!--                          icon="info"-->
-            <!--                        />-->
-            <!--                      </template>-->
-            <!--                      热更新等功能依赖于web界面，<span-->
-            <!--                        class="font-black text-[#5A3DAA]"-->
-            <!--                        >不可停用Web</span-->
-            <!--                      >-->
-            <!--                    </el-popover>-->
-            <!--                  </div>-->
-            <!--                  启用Web：-->
-            <!--                </template>-->
-            <!--                <el-switch-->
-            <!--                  active-text="开"-->
-            <!--                  inline-prompt-->
-            <!--                  disabled-->
-            <!--                  inactive-text="关"-->
-            <!--                  v-model="formData.webServer."-->
-            <!--                />-->
-            <!--              </el-form-item>-->
-            <!--            </el-col>-->
+          <div v-if="serverProfiles.length < 1" class="py-10 text-center text-slate-400">
+            {{ t("config.message.noProfiles") }}
+          </div>
 
-            <!--            <template v-if="formData.webEnable">-->
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.webServerPort.label')"
-                prop="webPort"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover width="300" placement="top" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="
-                            t('config.form.webServerPort.tips', {
-                              frpParameter: t('config.popover.frpParameter')
-                            })
-                          "
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
+          <div v-else class="grid gap-4 md:grid-cols-2">
+            <div
+              v-for="profile in serverProfiles"
+              :key="profile._id"
+              class="p-4 border border-slate-200 rounded-xl"
+            >
+              <div class="flex justify-between items-start gap-4">
+                <div>
+                  <div class="text-base font-semibold text-slate-900">
+                    {{ profile.name }}
                   </div>
-                  {{ t("config.form.webServerPort.label") }}
-                </template>
-                <el-input-number
-                  v-model="formData.webServer.port"
-                  placeholder="57400"
-                  :min="0"
-                  :max="65535"
-                  controls-position="right"
-                  class="w-full"
-                ></el-input-number>
-              </el-form-item>
-            </el-col>
-            <!--            </template>-->
+                  <div class="text-sm text-slate-500">
+                    {{ profile.serverAddr }}:{{ profile.serverPort }}
+                  </div>
+                </div>
+                <el-tag type="info">{{ profile.transport.protocol }}</el-tag>
+              </div>
 
-            <el-col :span="24">
-              <div class="h2">{{ t("config.title.logConfiguration") }}</div>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                class="!w-full"
-                :label="t('config.form.logLevel.label')"
-                prop="log.level"
-              >
-                <el-select v-model="formData.log.level">
-                  <el-option label="info" value="info" />
-                  <el-option label="debug" value="debug" />
-                  <el-option label="warn" value="warn" />
-                  <el-option label="error" value="error" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item
-                :label="t('config.form.logMaxDays.label')"
-                prop="log.maxDays"
-              >
-                <el-input-number
-                  v-model="formData.log.maxDays"
-                  class="!w-full"
-                  controls-position="right"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="24">
-              <div class="h2">{{ t("config.title.systemConfiguration") }}</div>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item
-                :label="t('config.form.systemLaunchAtStartup.label')"
-                prop="system.launchAtStartup"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover placement="top" width="300" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="t('config.form.systemLaunchAtStartup.tips')"
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.systemLaunchAtStartup.label") }}
-                </template>
-                <el-switch
-                  v-model="formData.system.launchAtStartup"
-                  :active-text="t('common.yes')"
-                  :inactive-text="t('common.no')"
-                  inline-prompt
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item
-                :label="t('config.form.systemSilentStartup.label')"
-                prop="system.silentStartup"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover placement="top" width="300" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="t('config.form.systemSilentStartup.tips')"
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.systemSilentStartup.label") }}
-                </template>
-                <el-switch
-                  v-model="formData.system.silentStartup"
-                  :active-text="t('common.yes')"
-                  :inactive-text="t('common.no')"
-                  inline-prompt
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item
-                :label="t('config.form.systemAutoConnectOnStartup.label')"
-                prop="system.autoConnectOnStartup"
-              >
-                <template #label>
-                  <div class="flex items-center mr-1 h-full">
-                    <el-popover placement="top" width="300" trigger="hover">
-                      <template #default>
-                        <div
-                          v-html="
-                            t('config.form.systemAutoConnectOnStartup.tips')
-                          "
-                        ></div>
-                      </template>
-                      <template #reference>
-                        <IconifyIconOffline
-                          class="text-base"
-                          color="#5A3DAA"
-                          icon="info"
-                        />
-                      </template>
-                    </el-popover>
-                  </div>
-                  {{ t("config.form.systemAutoConnectOnStartup.label") }}
-                </template>
-                <el-switch
-                  v-model="formData.system.autoConnectOnStartup"
-                  :active-text="t('common.yes')"
-                  :inactive-text="t('common.no')"
-                  inline-prompt
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="24">
-              <el-form-item
-                :label="t('config.form.systemLanguage.label')"
-                prop="system.language"
-              >
-                <el-select
-                  v-model="formData.system.language"
-                  @change="handleSystemLanguageChange"
-                >
-                  <el-option label="中文" value="zh-CN" />
-                  <el-option label="English" value="en-US" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <!--            <el-col :span="24">-->
-            <!--              <el-form-item>-->
-            <!--                <el-button plain type="primary" @click="handleSubmit">-->
-            <!--                  <IconifyIconOffline icon="save" />-->
-            <!--                  保 存-->
-            <!--                </el-button>-->
-            <!--              </el-form-item>-->
-            <!--            </el-col>-->
-          </el-row>
-        </el-form>
+              <div class="grid gap-2 mt-3 text-sm text-slate-600">
+                <div>
+                  {{ t("config.card.user") }}:
+                  <span class="font-medium text-slate-900">
+                    {{ profile.user || "-" }}
+                  </span>
+                </div>
+                <div>
+                  {{ t("config.card.auth") }}:
+                  <span class="font-medium text-slate-900">
+                    {{
+                      profile.auth.method === "token"
+                        ? t("config.card.authToken")
+                        : t("config.card.authNone")
+                    }}
+                  </span>
+                </div>
+                <div>
+                  {{ t("config.card.multiuser") }}:
+                  <span class="font-medium text-slate-900">
+                    {{ profile.multiuser ? t("common.yes") : t("common.no") }}
+                  </span>
+                </div>
+                <div>
+                  {{ t("config.card.logLevel") }}:
+                  <span class="font-medium text-slate-900">{{ profile.log.level }}</span>
+                </div>
+              </div>
+
+              <div class="flex gap-2 justify-end mt-4">
+                <el-button text type="primary" @click="handleCopyServerConfig2Base64(profile)">
+                  {{ t("config.button.copyProfile") }}
+                </el-button>
+                <el-button text type="primary" @click="handleOpenEditProfile(profile)">
+                  {{ t("common.modify") }}
+                </el-button>
+                <el-button text type="danger" @click="handleDeleteProfile(profile)">
+                  {{ t("common.delete") }}
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <!--  链接导入服务器  -->
+
     <el-dialog
       v-model="visible.copyServerConfig"
       :title="t('config.dialog.copyLink.title')"
@@ -1718,9 +751,9 @@ onUnmounted(() => {
         class="h-30"
         type="textarea"
         :rows="8"
-      ></el-input>
+      />
     </el-dialog>
-    <!--    链接导出服务器-->
+
     <el-dialog
       v-model="visible.pasteServerConfig"
       :title="t('config.dialog.importLink.title')"
@@ -1733,61 +766,264 @@ onUnmounted(() => {
         type="textarea"
         placeholder="frp://......"
         :rows="8"
-      ></el-input>
+      />
       <template #footer>
         <div class="dialog-footer">
-          <el-button
-            plain
-            type="primary"
-            @click="handlePasteServerConfigBase64"
-          >
-            <IconifyIconOffline
-              class="mr-2 cursor-pointer"
-              icon="label-important-rounded"
-            />
+          <el-button plain type="primary" @click="handlePasteServerConfigBase64">
+            <IconifyIconOffline class="mr-2 cursor-pointer" icon="label-important-rounded" />
             {{ t("config.button.import") }}
           </el-button>
         </div>
       </template>
     </el-dialog>
-    <!--    配置导出-->
-    <!--    <el-dialog-->
-    <!--      v-model="visibles.exportConfig"-->
-    <!--      title="导出配置"-->
-    <!--      width="500"-->
-    <!--      top="5%"-->
-    <!--    >-->
-    <!--      <el-alert-->
-    <!--        class="mb-4"-->
-    <!--        :title="`导出文件名为 frpc-desktop.${exportConfigType} 重复导出则覆盖`"-->
-    <!--        type="warning"-->
-    <!--        :closable="false"-->
-    <!--      />-->
-    <!--      <el-form>-->
-    <!--        <el-form-item label="导出类型">-->
-    <!--          <el-radio-group v-model="exportConfigType">-->
-    <!--            <el-radio-button label="toml" value="toml" />-->
-    <!--            <el-radio-button label="ini" value="ini" />-->
-    <!--          </el-radio-group>-->
-    <!--        </el-form-item>-->
-    <!--      </el-form>-->
-    <!--      <template #footer>-->
-    <!--        <div class="dialog-footer">-->
-    <!--          <el-button plain type="primary" @click="handleExportConfig">-->
-    <!--            <IconifyIconOffline-->
-    <!--              class="mr-2 cursor-pointer"-->
-    <!--              icon="downloadRounded"-->
-    <!--            />-->
-    <!--            导 出-->
-    <!--          </el-button>-->
-    <!--        </div>-->
-    <!--      </template>-->
-    <!--    </el-dialog>-->
+
+    <el-dialog
+      v-model="profileDialog.visible"
+      :title="profileDialog.title"
+      width="860"
+      @close="closeProfileDialog"
+    >
+      <el-form
+        ref="profileFormRef"
+        :model="profileForm"
+        :rules="profileRules"
+        label-position="right"
+        label-width="180"
+      >
+        <el-row :gutter="16">
+          <el-col :span="24">
+            <div class="h2 mb-4">{{ t("config.dialog.profile.basicTitle") }}</div>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item :label="t('config.form.profileName.label')" prop="name">
+              <el-input v-model="profileForm.name" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.serverAddr.label')" prop="serverAddr">
+              <el-input v-model="profileForm.serverAddr" placeholder="frps.example.com" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.serverPort.label')" prop="serverPort">
+              <el-input-number
+                v-model="profileForm.serverPort"
+                :min="0"
+                :max="65535"
+                class="!w-full"
+                controls-position="right"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.user.label')">
+              <el-input v-model="profileForm.user" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.multiuser.label')">
+              <el-switch
+                v-model="profileForm.multiuser"
+                :active-text="t('common.yes')"
+                :inactive-text="t('common.no')"
+                inline-prompt
+              />
+            </el-form-item>
+          </el-col>
+          <el-col v-if="profileForm.multiuser" :span="24">
+            <el-form-item :label="t('config.form.metadatasToken.label')" prop="metadatas.token">
+              <el-input v-model="profileForm.metadatas.token" />
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="24">
+            <div class="h2 mb-4">{{ t("config.dialog.profile.authTitle") }}</div>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.authMethod.label')">
+              <el-select v-model="profileForm.auth.method" class="w-full">
+                <el-option :label="t('config.form.authMethod.none')" value="none" />
+                <el-option :label="t('config.form.authMethod.token')" value="token" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="profileForm.auth.method === 'token'" :span="12">
+            <el-form-item :label="t('config.form.authToken.label')" prop="auth.token">
+              <el-input v-model="profileForm.auth.token" />
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="24">
+            <div class="h2 mb-4">{{ t("config.dialog.profile.transportTitle") }}</div>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.transportProtocol.label')">
+              <el-select v-model="profileForm.transport.protocol" class="w-full">
+                <el-option label="tcp" value="tcp" />
+                <el-option label="kcp" value="kcp" />
+                <el-option label="quic" value="quic" />
+                <el-option label="websocket" value="websocket" />
+                <el-option label="wss" value="wss" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.transportProxyURL.label')" prop="transport.proxyURL">
+              <el-input v-model="profileForm.transport.proxyURL" placeholder="http://127.0.0.1:7890" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.transportDialServerTimeout.label')">
+              <el-input-number
+                v-model="profileForm.transport.dialServerTimeout"
+                class="!w-full"
+                controls-position="right"
+                :min="0"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.transportDialServerKeepalive.label')">
+              <el-input-number
+                v-model="profileForm.transport.dialServerKeepalive"
+                class="!w-full"
+                controls-position="right"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.transportPoolCount.label')">
+              <el-input-number
+                v-model="profileForm.transport.poolCount"
+                class="!w-full"
+                controls-position="right"
+                :min="0"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.transportTcpMux.label')">
+              <el-switch
+                v-model="profileForm.transport.tcpMux"
+                :active-text="t('common.yes')"
+                :inactive-text="t('common.no')"
+                inline-prompt
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.transportTcpMuxKeepaliveInterval.label')">
+              <el-input-number
+                v-model="profileForm.transport.tcpMuxKeepaliveInterval"
+                class="!w-full"
+                controls-position="right"
+                :min="0"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.transportHeartbeatInterval.label')">
+              <el-input-number
+                v-model="profileForm.transport.heartbeatInterval"
+                class="!w-full"
+                controls-position="right"
+                :min="0"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.transportHeartbeatTimeout.label')">
+              <el-input-number
+                v-model="profileForm.transport.heartbeatTimeout"
+                class="!w-full"
+                controls-position="right"
+                :min="0"
+              />
+            </el-form-item>
+          </el-col>
+
+          <el-col :span="24">
+            <div class="h2 mb-4">{{ t("config.dialog.profile.tlsTitle") }}</div>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item :label="t('config.form.tlsEnable.label')">
+              <el-switch
+                v-model="profileForm.transport.tls.enable"
+                :active-text="t('common.yes')"
+                :inactive-text="t('common.no')"
+                inline-prompt
+              />
+            </el-form-item>
+          </el-col>
+          <template v-if="profileForm.transport.tls.enable">
+            <el-col :span="24">
+              <el-form-item :label="t('config.form.tlsCertFile.label')">
+                <el-input
+                  v-model="profileForm.transport.tls.certFile"
+                  readonly
+                  @click="handleSelectFile('cert', ['crt'])"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item :label="t('config.form.tlsKeyFile.label')">
+                <el-input
+                  v-model="profileForm.transport.tls.keyFile"
+                  readonly
+                  @click="handleSelectFile('key', ['key'])"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item :label="t('config.form.caCertFile.label')">
+                <el-input
+                  v-model="profileForm.transport.tls.trustedCaFile"
+                  readonly
+                  @click="handleSelectFile('ca', ['crt'])"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item :label="t('config.form.tlsServerName.label')">
+                <el-input v-model="profileForm.transport.tls.serverName" />
+              </el-form-item>
+            </el-col>
+          </template>
+
+          <el-col :span="24">
+            <div class="h2 mb-4">{{ t("config.dialog.profile.logTitle") }}</div>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.logLevel.label')">
+              <el-select v-model="profileForm.log.level" class="w-full">
+                <el-option label="info" value="info" />
+                <el-option label="debug" value="debug" />
+                <el-option label="warn" value="warn" />
+                <el-option label="error" value="error" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="t('config.form.logMaxDays.label')">
+              <el-input-number
+                v-model="profileForm.log.maxDays"
+                class="!w-full"
+                controls-position="right"
+                :min="0"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="closeProfileDialog">{{ t("common.close") }}</el-button>
+          <el-button type="primary" @click="handleSaveProfile">
+            {{ t("common.save") }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
-
-<style lang="scss" scoped>
-.button-input {
-  width: calc(100% - 68px);
-}
-</style>

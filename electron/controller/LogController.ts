@@ -13,7 +13,7 @@ class LogController extends BaseController {
 
   getFrpLogContent(req: ControllerParam) {
     this._logService
-      .getFrpLogContent()
+      .getFrpLogContent(req.args)
       .then(data => {
         req.event.reply(req.channel, ResponseUtils.success(data));
       })
@@ -35,21 +35,23 @@ class LogController extends BaseController {
       });
   }
 
-  // watchFrpcLogContent(req: ControllerRequest) {
-  //   this._logService.watchFrpcLog().then(data => {
-  //     req.event.reply(req.reply, this.ResponseUtils.success(data));
-  //   });
-  // }
+  getServerLogOptions(req: ControllerParam) {
+    this._logService
+      .getServerLogOptions()
+      .then(data => {
+        req.event.reply(req.channel, ResponseUtils.success(data));
+      })
+      .catch((err: Error) => {
+        Logger.error("LogController.getServerLogOptions", err);
+        req.event.reply(req.channel, ResponseUtils.fail(err));
+      });
+  }
 
   openFrpcLogFile(req: ControllerParam) {
     this._logService
-      .openFrpcLogFile()
+      .openFrpcLogFile(req.args)
       .then(data => {
-        if (data) {
-          ResponseUtils.success();
-        } else {
-          // ResponseUtils.fail();
-        }
+        req.event.reply(req.channel, ResponseUtils.success(data));
       })
       .catch((err: Error) => {
         Logger.error("LogController.openFrpcLogFile", err);
@@ -61,11 +63,7 @@ class LogController extends BaseController {
     this._logService
       .openAppLogFile()
       .then(data => {
-        if (data) {
-          ResponseUtils.success();
-        } else {
-          // ResponseUtils.fail();
-        }
+        req.event.reply(req.channel, ResponseUtils.success(data));
       })
       .catch((err: Error) => {
         Logger.error("LogController.openAppLogFile", err);

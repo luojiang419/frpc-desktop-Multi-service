@@ -30,6 +30,27 @@ class NetUtils {
       });
     });
   }
+
+  static async findAvailablePort(
+    startPort: number,
+    host: string = "localhost",
+    excludePorts: number[] = []
+  ): Promise<number> {
+    let currentPort = startPort;
+    const excludes = new Set(excludePorts);
+
+    while (currentPort <= 65535) {
+      if (!excludes.has(currentPort)) {
+        const inUse = await NetUtils.checkPortInUse(currentPort, host);
+        if (!inUse) {
+          return currentPort;
+        }
+      }
+      currentPort++;
+    }
+
+    throw new Error("No available port found");
+  }
 }
 
 export default NetUtils;
