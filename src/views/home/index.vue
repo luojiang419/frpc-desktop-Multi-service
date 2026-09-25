@@ -299,9 +299,9 @@ onUnmounted(() => {
                 {{ item.serverAddr }}:{{ item.serverPort }}
               </div>
             </div>
-            <el-tag :type="item.running && !item.connectionError ? 'success' : item.lastStartTime > 0 ? 'warning' : 'info'">
+            <el-tag :type="item.success ? 'success' : item.lastStartTime > 0 ? 'warning' : 'info'">
               {{
-                item.running && !item.connectionError
+                item.success
                   ? $t("home.dialog.serverStatus.running")
                   : item.lastStartTime > 0
                     ? $t("home.dialog.serverStatus.error")

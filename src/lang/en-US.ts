@@ -37,7 +37,7 @@ export default {
       connectionError: "Connection Failed",
       runningTime: "Running Time",
       frpcStatus: "Frpc {status}",
-      summary: "{running} / {total} servers running"
+      summary: "{running} / {total} servers connected"
     },
     button: {
       start: "Start",

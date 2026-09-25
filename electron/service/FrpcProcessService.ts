@@ -215,14 +215,18 @@ class FrpcProcessService {
     await new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  private readLogError(logPath: string, lastStartTime: number): string | null {
+  private readLogStatus(
+    logPath: string,
+    lastStartTime: number
+  ): { connectionError: string | null; connected: boolean } {
+    const unknown = { connectionError: null, connected: false };
     if (!fs.existsSync(logPath) || lastStartTime === -1) {
-      return null;
+      return unknown;
     }
     try {
       const stat = fs.statSync(logPath);
       if (stat.size === 0) {
-        return null;
+        return unknown;
       }
       const readSize = Math.min(stat.size, 8192);
       const buf = Buffer.alloc(readSize);
@@ -236,20 +240,27 @@ class FrpcProcessService {
       for (let i = lines.length - 1; i >= 0; i--) {
         const line = lines[i];
         if (FRPC_SUCCESS_PATTERNS.some(pattern => line.includes(pattern))) {
-          return null;
+          return { connectionError: null, connected: true };
         }
         const errorPattern = FRPC_ERROR_PATTERNS.find(pattern =>
           line.includes(pattern)
         );
         if (errorPattern) {
           const match = line.match(new RegExp(`${errorPattern}.*`));
-          return match ? match[0].trim() : line.trim();
+          return {
+            connectionError: match ? match[0].trim() : line.trim(),
+            connected: false
+          };
         }
       }
-      return null;
+      return unknown;
     } catch {
-      return null;
+      return unknown;
     }
+  }
+
+  private readLogError(logPath: string, lastStartTime: number): string | null {
+    return this.readLogStatus(logPath, lastStartTime).connectionError;
   }
 
   readFrpcConnectionError(serverId: string): string | null {
@@ -268,11 +279,15 @@ class FrpcProcessService {
 
     const wasRunning = existing.running;
     existing.running = this.isPidRunning(existing.pid);
+    const logStatus = this.readLogStatus(existing.logPath, existing.lastStartTime);
     existing.connectionError =
       existing.running || existing.lastStartTime > -1
-        ? this.readLogError(existing.logPath, existing.lastStartTime)
+        ? logStatus.connectionError
         : null;
-    existing.success = existing.running && !existing.connectionError;
+    existing.success =
+      existing.running &&
+      !existing.connectionError &&
+      (logStatus.connected || existing.success);
 
     if (existing.running) {
       existing.message = existing.connectionError || "Running";
@@ -564,7 +579,8 @@ class FrpcProcessService {
         this.toLaunchResult(profile, this._processStates.get(profile._id))
       );
 
-    const runningCount = results.filter(result => result.running).length;
+    const runningCount = results.filter(result => result.success).length;
+    const processCount = results.filter(result => result.running).length;
     const errorCount = results.filter(
       result =>
         !!result.connectionError ||
@@ -575,7 +591,7 @@ class FrpcProcessService {
     if (results.length > 0) {
       if (runningCount === results.length && errorCount === 0) {
         status = "running";
-      } else if (runningCount > 0 || errorCount > 0) {
+      } else if (processCount > 0 || errorCount > 0) {
         status = "error";
       }
     }

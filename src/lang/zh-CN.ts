@@ -37,7 +37,7 @@ export default {
       connectionError: "连接失败",
       runningTime: "已运行",
       frpcStatus: "Frpc {status}",
-      summary: "运行中 {running} / {total} 个服务器"
+      summary: "已连接 {running} / {total} 个服务器"
     },
     button: {
       start: "启 动",
