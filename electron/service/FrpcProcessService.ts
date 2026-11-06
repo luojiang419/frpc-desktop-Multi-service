@@ -357,14 +357,13 @@ class FrpcProcessService {
 
     const configPath = PathUtils.getServerTomlConfigFilePath(profile._id);
     const logPath = PathUtils.getServerLogFilePath(profile._id);
-    const webServerPort =
-      existing?.webServerPort ||
-      (await this.reserveWebServerPort([
-        ...reservedPorts,
-        ...Array.from(this._processStates.values())
-          .map(state => state.webServerPort)
-          .filter((port): port is number => typeof port === "number")
-      ]));
+    const webServerPort = await this.reserveWebServerPort([
+      ...reservedPorts,
+      ...Array.from(this._processStates.entries())
+        .filter(([serverId]) => serverId !== profile._id)
+        .map(([, processState]) => processState.webServerPort)
+        .filter((port): port is number => typeof port === "number")
+    ]);
 
     reservedPorts.push(webServerPort);
     fs.writeFileSync(logPath, "", { flag: "w" });
@@ -412,18 +411,23 @@ class FrpcProcessService {
         state.pid = parseInt(pidStr, 10) || null;
       } else {
         const binaryPath = this.getBinaryPath(version);
+        let processOutput = "";
+        const captureProcessOutput = (data: unknown) => {
+          const output = `${data}`.trim();
+          if (!output) {
+            return;
+          }
+          processOutput = `${processOutput}\n${output}`.trim().slice(-4096);
+          Logger.warn("FrpcProcessService.startSingleProfile", output);
+        };
         state.process = spawn(binaryPath, ["-c", configPath], {
           cwd: version.localPath,
           shell: false
         });
         state.pid = state.process.pid ?? null;
-        state.process.stdout?.on("data", data => {
-          Logger.debug("FrpcProcessService.startSingleProfile", `${data}`);
-        });
-        state.process.stderr?.on("data", data => {
-          Logger.debug("FrpcProcessService.startSingleProfile", `${data}`);
-        });
-        state.process.on("exit", code => {
+        state.process.stdout?.on("data", captureProcessOutput);
+        state.process.stderr?.on("data", captureProcessOutput);
+        state.process.on("close", code => {
           const currentState = this._processStates.get(profile._id);
           if (!currentState) {
             return;
@@ -436,6 +440,7 @@ class FrpcProcessService {
           );
           currentState.message =
             currentState.connectionError ||
+            processOutput ||
             `frpc exited with code ${code ?? "unknown"}`;
         });
       }

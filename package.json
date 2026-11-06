@@ -1,6 +1,6 @@
 {
   "name": "Frpc-Desktop",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "main": "dist-electron/main/index.js",
   "description": "FRP跨平台桌面客户端，可视化配置，轻松实现内网穿透！",
   "repository": "github:luojiang419/frpc-desktop-Multi-service",
@@ -37,6 +37,7 @@
     "release:win": "npm run build && electron-builder --win -p always",
     "release:linux": "npm run build && electron-builder --linux -p always",
     "preview": "vite preview",
+    "test": "node --test electron/utils/NetUtils.test.mjs",
     "lint": "eslint src/ electron/ --ext .ts,.tsx,.vue",
     "lint:fix": "eslint src/ electron/ --ext .ts,.tsx,.vue --fix",
     "electron:generate-icons": "electron-icon-builder --input=./public/logo.png --output=build --flatten"
