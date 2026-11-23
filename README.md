@@ -1,0 +1,153 @@
+<a name="readme-top"></a>
+
+<!-- PROJECT SHIELDS -->
+[![Downloads][downloads-shield]][downloads-url]
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+[![MIT License][license-shield]][license-url]
+
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+  <a href="https://github.com/luojiang419/frpc-desktop-Multi-service">
+    <img src="public/logo/pack/1024x1024.png" alt="Logo" width="140">
+  </a>
+
+<h3 align="center">Frpc Desktop Multi-Service</h3>
+
+  <p align="center">
+    🎉 A secondary-development desktop build based on the open-source project <a href="https://github.com/luckjiawei/frpc-desktop">luckjiawei/frpc-desktop</a>.
+    <br />
+    Focused on one core enhancement for Windows: a single frpc desktop client can connect to multiple frps servers at the same time for reverse proxy scenarios.
+    <br />
+    Support all frp versions / Auto-start / Visual configuration / Multi-server FRPS connections / Free and open source
+  </p>
+
+  <p>🎊 <strong>10,000+ Downloads Milestone!</strong> Thank you for your support!</p>
+
+  <p><a href="https://jwinks.com/p/frp/">📖 Docs</a> &nbsp; <a href="README.zh_CN.md">中文</a></p>
+
+<a href="https://trendshift.io/repositories/12489" target="_blank"><img src="https://trendshift.io/api/badge/repositories/12489" alt="luckjiawei%2Ffrpc-desktop | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://hellogithub.com/repository/b0dc116e9f2e4b8188da5a6d3e1bd8a4" target="_blank"><img src="https://abroad.hellogithub.com/v1/widgets/recommend.svg?rid=b0dc116e9f2e4b8188da5a6d3e1bd8a4&claim_uid=8ZMOhz30mGJAHpa" alt="Featured｜HelloGitHub" style="width: 250px; height: 54px;" width="250" height="54" /></a>
+</div>
+
+> 💡 If you prefer a **web UI**, try [Podux](https://github.com/luckjiawei/podux) —
+> the browser-based frpc manager from the same author.
+
+## TODO
+
+- [x] Auto-start on boot
+- [x] Support multiple users with user & meta_token
+- [x] Portable version
+- [x] Add UDP proxy type
+- [x] Support quick sharing of frps
+- [x] Add quick local port selection
+- [x] Support STCP proxy type
+- [x] Download frp through mirror sites
+- [x] Support import/export of all configurations
+- [x] One-click clear all configurations
+- [x] Support importing and recognizing frpc.toml
+- [x] TCP and UDP protocols support batch ports
+- [x] Support multiple languages
+
+## Common Issues
+
+### Mac shows app is damaged
+
+Run command: `sudo xattr -cr Frpc-Desktop.app`
+
+## Milestones
+
+- 2026-05-12: Released v2.0.0 Based on the original open-source project and added simultaneous connections to multiple frps servers on Windows
+- 2026-03-26: Released v1.2.5 Fixed known bugs
+- 2025-09-10: Released v1.2.3 Fixed known bugs, Supports proxy protocol, Optimize performance
+- 2025-04-22: Released v1.2.2 Fixed known bugs, Supports HTTP Locations
+- 2025-03-25: Released v1.2.1 Fixed known bugs, Supports english
+- 2025-03-06: Released v1.2.0 Underlying reconstruction, improved stability
+- 2025-01-09: Released v1.1.6
+- 2024-12-04: Released v1.1.5 Optimized experience, support modifying webport, solved GitHub rate limit issues, log optimization
+- 2024-11-08: Released v1.1.4 Fixed known bugs
+- 2024-10-14: Released v1.1.3 Support XTCP protocol, optimized experience
+- 2024-09-25: Released v1.1.2 Support HTTP basic auth, subdomains
+- 2024-09-07: Released v1.1.0 Support batch ports, single proxy switch control
+- 2024-08-24: Released v1.0.9 Support mirror downloads, config import/export
+- 2024-08-17: Released v1.0.8 Support STCP proxy
+- 2024-08-11: Released v1.0.7
+- 2024-08-09: Released v1.0.6
+- 2024-08-06: Released v1.0.5
+- 2024-08-06: Released v1.0.4 Adapted to support multi-user plugin
+- 2024-07-17: Released v1.0.3 Fixed known bugs, added auto-start, added frp version deletion
+- 2024-01-29: Released v1.0.2 Added Linux client and proxy mode
+- 2023-12-01: Released v1.0.1
+- 2023-11-28: Released v1.0
+
+## Community
+
+No advertisements allowed!!!
+
+### Telegram
+
+[https://t.me/+4kziSBL3LxVmYzVl](https://t.me/+4kziSBL3LxVmYzVl)
+
+### WeChat Group
+
+**~~Scan WeChat QR code to join open source project discussion group~~ WeChat group exceeds 200 people, cannot scan code to join. Follow official account to join group**
+
+<img src="screenshots/wechat-qr.png" alt="QR Code" width="200"><img src="screenshots/mp_qr.jpg" alt="Official Account QR Code" width="200">
+
+## Screenshot
+
+![launch](https://github.com/luckjiawei/frpc-desktop/blob/main/screenshots/en/launch.png?raw=true)
+
+![proxys manager](https://github.com/luckjiawei/frpc-desktop/blob/main/screenshots/en/proxy.png?raw=true)
+
+![frp download](https://github.com/luckjiawei/frpc-desktop/blob/main/screenshots/en/download.png?raw=true)
+
+![config](https://github.com/luckjiawei/frpc-desktop/blob/main/screenshots/en/config.png?raw=true)
+
+![logger](https://github.com/luckjiawei/frpc-desktop/blob/main/screenshots/en/logger.png?raw=true)
+
+![about](https://github.com/luckjiawei/frpc-desktop/blob/main/screenshots/en/about.png?raw=true)
+
+## Donate
+
+👉👉👉[Click to donate](https://jwinks.com/donate/)👈👈👈
+
+
+
+## Contributors
+
+<a href="https://github.com/luojiang419/frpc-desktop-Multi-service/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=luojiang419/frpc-desktop-Multi-service" />
+</a>
+
+## License
+
+[MIT](LICENSE)
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=luojiang419/frpc-desktop-Multi-service&type=Date)](https://www.star-history.com/#luojiang419/frpc-desktop-Multi-service&Date)
+
+<!-- MARKDOWN LINKS & IMAGES -->
+
+[downloads-shield]: https://img.shields.io/github/downloads/luojiang419/frpc-desktop-Multi-service/total.svg?style=for-the-badge
+
+[downloads-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/releases
+
+[forks-shield]: https://img.shields.io/github/forks/luojiang419/frpc-desktop-Multi-service.svg?style=for-the-badge
+
+[forks-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/network/members
+
+[stars-shield]: https://img.shields.io/github/stars/luojiang419/frpc-desktop-Multi-service.svg?style=for-the-badge
+
+[stars-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/stargazers
+
+[issues-shield]: https://img.shields.io/github/issues/luojiang419/frpc-desktop-Multi-service.svg?style=for-the-badge
+
+[issues-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/issues
+
+[license-shield]: https://img.shields.io/github/license/luojiang419/frpc-desktop-Multi-service.svg?style=for-the-badge
+
+[license-url]: https://github.com/luojiang419/frpc-desktop-Multi-service/blob/main/LICENSE

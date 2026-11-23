@@ -1,0 +1,134 @@
+$main-bg: #F3F3F3;
+$primary-color: #5F3BB0;
+$danger-color: #F56C6C;
+
+.main-container {
+  background: $main-bg;
+  width: calc(100% - 60px);
+  height: 100vh;
+  padding: 15px;
+
+
+  .main {
+    height: 100%;
+    width: 100%;
+    //overflow: hidden;
+  }
+
+  .app-container-breadcrumb {
+    height: calc(100% - 50px);
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .breadcrumb {
+    margin-bottom: 15px;
+
+    .breadcrumb-left {
+      color: $primary-color;
+      font-size: 36px;
+      height: 32px;
+
+      svg {
+        vertical-align: top;
+      }
+
+      span {
+        vertical-align: top;
+        color: black;
+        font-size: 18px;
+        font-weight: bold;
+        //transform: translateY(5px);
+        display: inline-block;
+
+      }
+    }
+  }
+
+
+}
+
+.left-menu-container {
+  background: #fff;
+  width: 60px;
+  height: 100vh;
+  display: flex; /* 设置为 flexbox */
+  flex-direction: column; /* 纵向排列子元素 */
+
+  .menu-footer {
+    margin-top: auto;
+
+  }
+
+  .version {
+    height: 40px;
+    width: 60px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: $primary-color;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .version:hover {
+    animation: heartBeat 1s;
+  }
+
+  .menu-container, .menu-footer {
+
+    .menu {
+      display: flex;
+      height: 40px;
+      justify-content: center;
+      align-items: center;
+      font-size: 20px;
+      color: #ADADAD;
+      margin-bottom: 10px;
+
+
+    }
+
+
+    .menu-selected {
+      background: #EBE6F7;
+      color: $primary-color;
+    }
+
+    .menu:hover, .menu:focus, .menu:active, {
+      color: $primary-color;
+      cursor: pointer;
+
+      & > svg {
+        animation: swing 0.5s;
+      }
+    }
+
+
+  }
+}
+
+.logo-container {
+  height: 60px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  .logo {
+    width: 60%;
+  }
+}
+
+
+.primary-text {
+  color: $primary-color;
+}
+
+.bg-primary {
+  background:  $primary-color;
+}
+
+.danger-text {
+  color: $danger-color !important;
+}
